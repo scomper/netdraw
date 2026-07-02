@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - 面板闪烁和工具条高度跳动
 - 导出 SVG 图标方向修正（向上箭头）
 - 安全脱敏：office-topo.json、示例 JSON、deploy.sh
+- 保存按钮无响应（customTypes 未定义导致 ReferenceError）
+- 导出图片内容空白（clipPath 和 overflow:hidden 在 canvas 渲染中失效）
+- 在线图标搜索无结果（tags.json 值为数组，旧代码按字符串匹配）
+- 导入文件兼容 customPresets 和旧 customTypes 两种格式
 
 ### Security
 - 示例拓扑文件全面脱敏（IP / MAC / 品牌 / 部门）
