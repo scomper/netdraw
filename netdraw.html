@@ -3585,14 +3585,14 @@ function clearAllData(){
   setTimeout(fitView,50);
   toast('所有本地数据已清除');
 }
-function manualSave(){
+async function manualSave(){
   saveAllCanvases();_canvasDirty.clear();renderCanvasDropdown();
   const title=(document.getElementById('docTitle').textContent.trim()||'Untitled');
   // If we already have a file handle and the title matches, overwrite directly
   if(_lastFileHandle&&_lastSaveTitle===title){
-    _writeToHandle(_lastFileHandle,title);
+    await _writeToHandle(_lastFileHandle,title);
   }else{
-    _downloadProjectFile(title);
+    await _downloadProjectFile(title);
   }
 }
 let _lastSaveTitle=null;
@@ -3609,7 +3609,7 @@ async function _writeToHandle(handle,title){
     toast('已保存');
   }catch(e){toast('保存失败');}
 }
-function _downloadProjectFile(title){
+async function _downloadProjectFile(title){
   saveCurrentCanvas();
   const proj={version:2,title,canvases,currentCanvasIdx,customTypes,customDefs:{}};
   customTypes.forEach(k=>{proj.customDefs[k]={label:TYPE_LABELS[k],color:COLORS[k],svg:TYPE_SVG[k],fields:PRESET_FIELDS[k]||[]};});
@@ -3617,23 +3617,24 @@ function _downloadProjectFile(title){
   const blob=new Blob([d],{type:'application/json'});
   // Try File System Access API for save location picker
   if(window.showSaveFilePicker){
-    (async()=>{
-      try{
-        const handle=await window.showSaveFilePicker({suggestedName:title+'.json',types:[{description:'NetDraw JSON',accept:{'application/json':['.json']}}]});
-        _lastFileHandle=handle;_lastSaveTitle=title;
-        const writable=await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        toast('已保存');
-      }catch(e){if(e.name!=='AbortError')toast('保存失败');}
-    })();
-  }else{
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=title+'.json';
-    a.click();URL.revokeObjectURL(a.href);
-    toast('已保存');
+    try{
+      const handle=await window.showSaveFilePicker({suggestedName:title+'.json',types:[{description:'NetDraw JSON',accept:{'application/json':['.json']}}]});
+      _lastFileHandle=handle;_lastSaveTitle=title;
+      const writable=await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      toast('已保存');
+      return;
+    }catch(e){
+      if(e.name==='AbortError')return; // User cancelled
+      // Fallback to download link below
+    }
   }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=title+'.json';
+  a.click();URL.revokeObjectURL(a.href);
+  toast('已保存');
 }
 function loadAllCanvases(){
   try{
