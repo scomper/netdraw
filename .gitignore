@@ -41,3 +41,4 @@ deploy.sh
 check-security.sh
 test-ai-topo.py
 netdraw-summary.md
+AGENTS.md
