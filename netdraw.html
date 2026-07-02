@@ -726,7 +726,7 @@ try{
 const NS='http://www.w3.org/2000/svg';
 const NETDRAW_VERSION='1.1.0';
 const NETDRAW_RELEASE='2026-07-02';
-const COLORS={router:'#6c5ce7',switch:'#0984e3',gateway:'#e17055',ap:'#00b894',cam:'#e17055',nvr:'#fd79a8',nas:'#00cec9',security:'#d63031',firewall:'#e84393',server:'#2d3436',database:'#6c5ce7',desktop:'#636e72',laptop:'#00b894',phone:'#fdcb6e',user:'#636e72',cloud:'#0984e3',custom:'#636e72',cmobile:'#0078d4',cunicom:'#e60012',ctelecom:'#0060ac',cbn:'#2e7d32'};
+const COLORS={router:'#6c5ce7',switch:'#0984e3',ap:'#00b894',cam:'#e17055',nvr:'#fd79a8',nas:'#00cec9',security:'#d63031',firewall:'#e84393',server:'#2d3436',database:'#6c5ce7',desktop:'#636e72',laptop:'#00b894',phone:'#fdcb6e',user:'#636e72',cloud:'#0984e3',custom:'#636e72',cmobile:'#0078d4',cunicom:'#e60012',ctelecom:'#0060ac',cbn:'#2e7d32'};
 const EDGE_VARIANTS={
   default:  {stroke:'#a8b5c8',width:1.5,dash:'',label:'默认'},
   emphasis:{stroke:'#6c5ce7',width:2.5,dash:'',label:'主干链路'},
@@ -759,7 +759,7 @@ function wrapText(text,maxW){
   }
   return lines;
 }
-const TYPE_LABELS={router:'路由器',switch:'交换机',gateway:'网关',ap:'无线AP',cam:'摄像头',nvr:'NVR',nas:'NAS',security:'防火墙',firewall:'堡垒机',server:'服务器',database:'数据库',desktop:'台式机',laptop:'笔记本',phone:'手机',user:'用户',cloud:'云服务',custom:'自定义',note:'便签',cmobile:'中国移动',cunicom:'中国联通',ctelecom:'中国电信',cbn:'中国广电'};
+const TYPE_LABELS={router:'路由器',switch:'交换机',ap:'无线AP',cam:'摄像头',nvr:'NVR',nas:'NAS',security:'防火墙',firewall:'堡垒机',server:'服务器',database:'数据库',desktop:'台式机',laptop:'笔记本',phone:'手机',user:'用户',cloud:'云服务',custom:'自定义',note:'便签',cmobile:'中国移动',cunicom:'中国联通',ctelecom:'中国电信',cbn:'中国广电'};
 // Badge 颜色循环
 const BADGE_COLORS=['#6c5ce7','#00b894','#e17055','#0984e3','#fdcb6e','#e84393'];
 // Badge 全局计数器（localStorage 持久化）
@@ -772,7 +772,6 @@ const NOTE_COLORS={
   pink:  {light:'#fce4ec',dark:'#3a1a2a'}
 };
 const PRESET_FIELDS={
-  gateway:[{l:'IP地址',t:'text'},{l:'型号',t:'text'},{l:'描述',t:'textarea'}],
   switch:[{l:'IP地址',t:'text'},{l:'型号',t:'text'},{l:'描述',t:'textarea'}],
   router:[{l:'WAN IP',t:'text'},{l:'LAN IP',t:'text'},{l:'描述',t:'textarea'}],
   ap:[{l:'IP地址',t:'text'},{l:'MAC',t:'text'},{l:'位置',t:'text'}],
@@ -786,7 +785,6 @@ const PRESET_FIELDS={
   desktop:[{l:'IP地址',t:'text'},{l:'使用者',t:'text'}],
   laptop:[{l:'IP地址',t:'text'},{l:'使用者',t:'text'}],
   phone:[{l:'IP地址',t:'text'},{l:'使用者',t:'text'}],
-  gateway:[{l:'IP地址',t:'text'},{l:'部门',t:'text'}],
   cloud:[{l:'服务',t:'text'},{l:'地址',t:'text'}],
   cmobile:[{l:'公网IP',t:'text'},{l:'机房位置',t:'text'},{l:'描述',t:'textarea'}],
   cunicom:[{l:'公网IP',t:'text'},{l:'机房位置',t:'text'},{l:'描述',t:'textarea'}],
@@ -1273,7 +1271,7 @@ function toggleSection(name){
   });
 })();
 
-const BUILTIN_TYPES=new Set(['gateway','router','switch','ap','cam','nvr','nas','security','firewall','server','database','desktop','laptop','phone','user','cloud']);
+const BUILTIN_TYPES=new Set(['router','switch','ap','cam','nvr','nas','security','firewall','server','database','desktop','laptop','phone','user','cloud']);
 let customPresets=[]; // [{id, name, iconKey, color, fields}] - all type="custom"
 function buildDevicePanel(){
   const el=document.getElementById('lpBody');
@@ -1613,10 +1611,9 @@ async function searchOnlineIcons(){
     const tags=await resp.json();
     const matches=[];
     for(const[name,tagList] of Object.entries(tags)){
-      if(typeof tagList==='string'&&(tagList.toLowerCase().includes(query.toLowerCase())||name.toLowerCase().includes(query.toLowerCase()))){
-        matches.push(name);
-        if(matches.length>=20)break;
-      }
+      const q=query.toLowerCase();
+      const matched=name.toLowerCase().includes(q)||(Array.isArray(tagList)?tagList.some(t=>t.toLowerCase().includes(q)):String(tagList).toLowerCase().includes(q));
+      if(matched){matches.push(name);if(matches.length>=20)break;}
     }
     if(!matches.length){
       container.innerHTML='<div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:11px;padding:8px">未找到图标，试试其他关键词</div>';
@@ -1703,13 +1700,12 @@ const TYPE_SVG={
   phone:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>`,
     satellite:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l-5.5 9h11z"/><path d="M12 22l5.5-9h-11z"/><circle cx="12" cy="12" r="3"/></svg>`,
   firewall:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="10" width="8" height="6" rx="1"/><path d="M10 10V8a2 2 0 0 1 4 0v2"/></svg>`,
-  gateway:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4M18 12h4"/><rect x="6" y="6" width="12" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M12 6v-2M12 20v-2"/></svg>`,
   user:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   rack:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="14" x2="20" y2="14"/></svg>`,
   tower:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M8 6l4-4 4 4"/><path d="M8 18l4 4 4-4"/><circle cx="12" cy="10" r="2"/></svg>`,
   hub:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="22"/><line x1="2" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/></svg>`,
   vpn:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 4v16"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="12" r="2"/><path d="M10 12h4"/></svg>`,
-  dns:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/><path d="M12 2c2.5 2.5 4 6 4 10s-1.5 7.5-4 10"/><path d="M12 2c-2.5 2.5-4 6-4 10s1.5 7.5 4 10"/></svg>`,
+  dns:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="6" rx="2"/><circle cx="6" cy="5" r="1"/><circle cx="10" cy="5" r="1"/><rect x="2" y="9" width="20" height="6" rx="2"/><circle cx="6" cy="12" r="1"/><circle cx="10" cy="12" r="1"/><rect x="2" y="16" width="20" height="6" rx="2"/><circle cx="6" cy="19" r="1"/><circle cx="10" cy="19" r="1"/></svg>`,
   loadbalancer:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><path d="M6 6h12v4H6z"/><line x1="4" y1="14" x2="4" y2="22"/><line x1="12" y1="14" x2="12" y2="22"/><line x1="20" y1="14" x2="20" y2="22"/><path d="M6 10l6 4 6-4"/></svg>`,
   container:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="9" height="6" rx="1"/><rect x="13" y="6" width="9" height="6" rx="1"/><rect x="2" y="14" width="9" height="6" rx="1"/><rect x="13" y="14" width="9" height="6" rx="1"/></svg>`,
   ups:`<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/><path d="M15 4v16"/><path d="M9 12h6"/><circle cx="12" cy="8" r="1"/></svg>`,
@@ -4125,7 +4121,7 @@ function openAIDialog(){
 function closeAIDialog(){document.getElementById('aiOverlay').classList.remove('show');}
 function openHelpDialog(){
   const vi=document.getElementById('versionInfo');
-  if(vi)vi.innerHTML=`NetDraw v${NETDRAW_VERSION} · ${NETDRAW_RELEASE} · Author: scomper · MIT License<br>安全的本地网络拓扑绘制工具，单文件部署、数据缓存在浏览器本地，支持 AI 识别生成拓扑图。`;
+  if(vi)vi.innerHTML=`<a href="https://github.com/scomper/netdraw/releases" target="_blank" style="color:var(--accent);text-decoration:none">NetDraw v${NETDRAW_VERSION}</a> · ${NETDRAW_RELEASE} · Author: scomper · MIT License<br>安全的本地网络拓扑绘制工具，单文件部署、数据缓存在浏览器本地，支持 AI 识别生成拓扑图。`;
   document.getElementById('helpOverlay').classList.add('show');
 }
 function closeHelpDialog(){document.getElementById('helpOverlay').classList.remove('show');}
