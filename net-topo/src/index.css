@@ -1,0 +1,70 @@
+/* 重置默认样式 + 源力设计 Token */
+:root {
+  /* 源力 Primary Blue */
+  --yuanli-blue-1: #f3f7ff;
+  --yuanli-blue-2: #ebf1ff;
+  --yuanli-blue-3: #a0c0ff;
+  --yuanli-blue-4: #ccddff;
+  --yuanli-blue-5: #387bff;
+  --yuanli-blue-6: #1664ff;
+  --yuanli-blue-7: #0055ff;
+
+  /* 源力 Neutral */
+  --yuanli-neutral-1: #ffffff;
+  --yuanli-neutral-2: #fcfdfe;
+  --yuanli-neutral-3: #eceded;
+  --yuanli-neutral-4: #dde2e9;
+  --yuanli-neutral-5: #c9cdd4;
+  --yuanli-neutral-7: #4e5969;
+  --yuanli-neutral-8: #333333;
+  --yuanli-neutral-9: #1d2129;
+  --yuanli-neutral-10: #0c0d0e;
+  --yuanli-neutral-11: #000b1a;
+
+  /* 源力 Status */
+  --yuanli-danger-2: #feeced;
+  --yuanli-danger-3: #fa9ea3;
+  --yuanli-danger-5: #f65159;
+  --yuanli-danger-6: #d7312a;
+  --yuanli-danger-7: #c43138;
+
+  --yuanli-success-1: #e8ffea;
+  --yuanli-success-2: #d4f7d8;
+  --yuanli-success-5: #00b42a;
+  --yuanli-success-6: #009a29;
+
+  --yuanli-warning-1: #fff7e8;
+  --yuanli-warning-2: #ffe4ba;
+  --yuanli-warning-5: #ff7d00;
+  --yuanli-warning-6: #e56700;
+
+  /* 源力 Surface */
+  --bg-body: var(--yuanli-neutral-2);
+  --bg-surface: var(--yuanli-neutral-1);
+  --bg-surface-dim: var(--yuanli-neutral-3);
+  --bg-hover: var(--yuanli-blue-1);
+  --border-default: var(--yuanli-neutral-4);
+  --border-light: var(--yuanli-neutral-3);
+  --text-primary: var(--yuanli-neutral-9);
+  --text-secondary: var(--yuanli-neutral-7);
+  --text-tertiary: var(--yuanli-neutral-5);
+  --accent: var(--yuanli-blue-7);
+  --accent-light: var(--yuanli-blue-5);
+  --accent-hover: var(--yuanli-blue-1);
+
+  /* 源力 Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--text-primary);
+}
