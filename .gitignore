@@ -35,3 +35,9 @@ logs/
 __pycache__/
 *.pyc
 .venv/
+
+# Private scripts (not part of the project)
+deploy.sh
+check-security.sh
+test-ai-topo.py
+netdraw-summary.md
