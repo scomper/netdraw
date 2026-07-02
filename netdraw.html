@@ -3585,14 +3585,14 @@ function clearAllData(){
   setTimeout(fitView,50);
   toast('所有本地数据已清除');
 }
-async function manualSave(){
+function manualSave(){
   saveAllCanvases();_canvasDirty.clear();renderCanvasDropdown();
   const title=(document.getElementById('docTitle').textContent.trim()||'Untitled');
   // If we already have a file handle and the title matches, overwrite directly
   if(_lastFileHandle&&_lastSaveTitle===title){
-    await _writeToHandle(_lastFileHandle,title);
+    _writeToHandle(_lastFileHandle,title);
   }else{
-    await _downloadProjectFile(title);
+    _downloadProjectFile(title);
   }
 }
 let _lastSaveTitle=null;
@@ -3874,9 +3874,12 @@ function captureScreenshot(){
     while(iconSvg.firstChild){g.appendChild(iconSvg.firstChild);}
     iconSvg.parentNode.replaceChild(g,iconSvg);
   });
-  // Clean defs: remove non-clipPath elements (grid pattern etc.), keep clipPath
+  // Clean defs and remove clipPaths (they break canvas rendering)
   const defs=clone.querySelector('defs');
-  if(defs){defs.querySelectorAll(':not(clipPath)').forEach(el=>el.remove());}
+  if(defs)defs.remove();
+  // Remove all clip-path references and overflow="hidden" (breaks canvas SVG-to-image)
+  clone.querySelectorAll('[clip-path]').forEach(el=>el.removeAttribute('clip-path'));
+  clone.querySelectorAll('[overflow]').forEach(el=>el.removeAttribute('overflow'));
   // Compute content bounds with generous padding (node card is 160x58)
   if(!nodes.length){toast('画布为空');return;}
   const hw=80, hh=30; // half card width/height
@@ -3892,6 +3895,7 @@ function captureScreenshot(){
   const bw=maxX-minX,bh=maxY-minY;
   clone.setAttribute('viewBox',`${minX} ${minY} ${bw} ${bh}`);
   clone.setAttribute('width',bw);clone.setAttribute('height',bh);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
   const s=4;
   const canvas=document.createElement('canvas');
   canvas.width=Math.floor(bw*s);canvas.height=Math.floor(bh*s);
@@ -3901,7 +3905,7 @@ function captureScreenshot(){
   const img=new Image();
   img.onload=()=>{ctx.drawImage(img,0,0,bw,bh);const a=document.createElement('a');a.download=(document.getElementById('docTitle').textContent.trim()||'Untitled')+'.png';a.href=canvas.toDataURL('image/png');a.click();toast('截图已保存');};
   img.onerror=()=>toast('截图失败');
-  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svgData)));
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgData);
 }
 function exportSVG(){
   const svgEl=document.getElementById('svg');
@@ -3992,9 +3996,11 @@ function exportSVG(){
     while(iconSvg.firstChild){g.appendChild(iconSvg.firstChild);}
     iconSvg.parentNode.replaceChild(g,iconSvg);
   });
-  // Clean defs: remove non-clipPath elements, keep clipPath for text clipping
+  // Clean defs and remove clipPaths (breaks SVG rendering in some viewers)
   const defs=clone.querySelector('defs');
-  if(defs){defs.querySelectorAll(':not(clipPath)').forEach(el=>el.remove());}
+  if(defs)defs.remove();
+  clone.querySelectorAll('[clip-path]').forEach(el=>el.removeAttribute('clip-path'));
+  clone.querySelectorAll('[overflow]').forEach(el=>el.removeAttribute('overflow'));
   // Compute content bounds
   if(!nodes.length){toast('画布为空');return;}
   const hw=80,hh=30,pad=50;
