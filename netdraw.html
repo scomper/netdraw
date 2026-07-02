@@ -4121,7 +4121,7 @@ function openAIDialog(){
 function closeAIDialog(){document.getElementById('aiOverlay').classList.remove('show');}
 function openHelpDialog(){
   const vi=document.getElementById('versionInfo');
-  if(vi)vi.innerHTML=`<a href="https://github.com/scomper/netdraw/releases" target="_blank" style="color:var(--accent);text-decoration:none">NetDraw v${NETDRAW_VERSION}</a> · ${NETDRAW_RELEASE} · Author: scomper · MIT License<br>安全的本地网络拓扑绘制工具，单文件部署、数据缓存在浏览器本地，支持 AI 识别生成拓扑图。`;
+  if(vi)vi.innerHTML=`<a href="https://github.com/scomper/netdraw/blob/main/CHANGELOG.md" target="_blank" style="color:var(--accent);text-decoration:none">NetDraw v${NETDRAW_VERSION}</a> · ${NETDRAW_RELEASE} · Author: scomper · MIT License<br>安全的本地网络拓扑绘制工具，单文件部署、数据缓存在浏览器本地，支持 AI 识别生成拓扑图。`;
   document.getElementById('helpOverlay').classList.add('show');
 }
 function closeHelpDialog(){document.getElementById('helpOverlay').classList.remove('show');}
