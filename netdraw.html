@@ -3598,8 +3598,8 @@ function manualSave(){
 let _lastSaveTitle=null;
 async function _writeToHandle(handle,title){
   saveCurrentCanvas();
-  const proj={version:2,title,canvases,currentCanvasIdx,customTypes,customDefs:{}};
-  customTypes.forEach(k=>{proj.customDefs[k]={label:TYPE_LABELS[k],color:COLORS[k],svg:TYPE_SVG[k],fields:PRESET_FIELDS[k]||[]};});
+  const proj={version:2,title,canvases,currentCanvasIdx,customPresets,customDefs:{}};
+  customPresets.forEach(p=>{proj.customDefs[p.id]={label:p.name,color:p.color,svg:p.iconKey?TYPE_SVG[p.iconKey]||USER_ICONS[p.iconKey]||'':'',fields:p.fields||[]};});
   const d=JSON.stringify(proj,null,2);
   const blob=new Blob([d],{type:'application/json'});
   try{
@@ -3611,8 +3611,8 @@ async function _writeToHandle(handle,title){
 }
 async function _downloadProjectFile(title){
   saveCurrentCanvas();
-  const proj={version:2,title,canvases,currentCanvasIdx,customTypes,customDefs:{}};
-  customTypes.forEach(k=>{proj.customDefs[k]={label:TYPE_LABELS[k],color:COLORS[k],svg:TYPE_SVG[k],fields:PRESET_FIELDS[k]||[]};});
+  const proj={version:2,title,canvases,currentCanvasIdx,customPresets,customDefs:{}};
+  customPresets.forEach(p=>{proj.customDefs[p.id]={label:p.name,color:p.color,svg:p.iconKey?TYPE_SVG[p.iconKey]||USER_ICONS[p.iconKey]||'':'',fields:p.fields||[]};});
   const d=JSON.stringify(proj,null,2);
   const blob=new Blob([d],{type:'application/json'});
   // Try File System Access API for save location picker
@@ -3681,7 +3681,7 @@ function _parseProjectFile(file,cb){
       });};
       if(d.version===2&&d.canvases){
         d.canvases.forEach(c=>migrateEdges(c.edges));
-        cb({canvases:d.canvases,idx:d.currentCanvasIdx||0,customTypes:d.customTypes,customDefs:d.customDefs||{},title:fileName});
+        cb({canvases:d.canvases,idx:d.currentCanvasIdx||0,customPresets:d.customPresets||null,customTypes:d.customTypes,customDefs:d.customDefs||{},title:fileName});
       }else if(d.nodes){
         migrateEdges(d.edges);
         // Migrate {position:{x,y}} → flat {x,y}
@@ -3699,12 +3699,24 @@ function _parseProjectFile(file,cb){
 function openFromFile(e){
   const file=e.target.files[0];if(!file)return;
   _parseProjectFile(file,d=>{
-    // Restore custom types
-    if(d.customTypes&&d.customDefs){
-      customTypes=d.customTypes;
-      Object.keys(d.customDefs).forEach(k=>{
-        TYPE_LABELS[k]=d.customDefs[k].label;COLORS[k]=d.customDefs[k].color;
-        TYPE_SVG[k]=sanitizeSvg(d.customDefs[k].svg||'');PRESET_FIELDS[k]=d.customDefs[k].fields||[];
+    // Restore custom types (support both old customTypes and new customPresets format)
+    if(d.customPresets){
+      d.customPresets.forEach(p=>{
+        if(!customPresets.find(cp=>cp.id===p.id)){
+          customPresets.push(p);
+          if(p.iconKey){TYPE_SVG[p.iconKey]=sanitizeSvg(p.svg||USER_ICONS[p.iconKey]||'');}
+          TYPE_LABELS[p.id]=p.name;COLORS[p.id]=p.color;PRESET_FIELDS[p.id]=p.fields||[];
+        }
+      });
+      buildDevicePanel();
+    }else if(d.customTypes&&d.customDefs){
+      d.customTypes.forEach(k=>{
+        if(!customPresets.find(p=>p.id===k)){
+          const def=d.customDefs[k]||{};
+          customPresets.push({id:k,name:def.label||k,iconKey:k,color:def.color||'#636e72',fields:def.fields||[]});
+          TYPE_LABELS[k]=def.label||k;COLORS[k]=def.color||'#636e72';
+          TYPE_SVG[k]=sanitizeSvg(def.svg||'');PRESET_FIELDS[k]=def.fields||[];
+        }
       });
       buildDevicePanel();
     }
@@ -3758,12 +3770,22 @@ function importFromFile(e){
     nodes.push(...newNodes);
     edges.push(...newEdges);
     // Merge custom types from imported file
-    if(d.customTypes&&d.customDefs){
+    if(d.customPresets){
+      d.customPresets.forEach(p=>{
+        if(!customPresets.find(cp=>cp.id===p.id)){
+          customPresets.push(p);
+          if(p.iconKey){TYPE_SVG[p.iconKey]=sanitizeSvg(p.svg||USER_ICONS[p.iconKey]||'');}
+          TYPE_LABELS[p.id]=p.name;COLORS[p.id]=p.color;PRESET_FIELDS[p.id]=p.fields||[];
+        }
+      });
+      buildDevicePanel();
+    }else if(d.customTypes&&d.customDefs){
       d.customTypes.forEach(k=>{
         if(!TYPE_LABELS[k]){
-          customTypes.push(k);
-          TYPE_LABELS[k]=d.customDefs[k].label;COLORS[k]=d.customDefs[k].color;
-          TYPE_SVG[k]=sanitizeSvg(d.customDefs[k].svg||'');PRESET_FIELDS[k]=d.customDefs[k].fields||[];
+          const def=d.customDefs[k]||{};
+          customPresets.push({id:k,name:def.label||k,iconKey:k,color:def.color||'#636e72',fields:def.fields||[]});
+          TYPE_LABELS[k]=def.label||k;COLORS[k]=def.color||'#636e72';
+          TYPE_SVG[k]=sanitizeSvg(def.svg||'');PRESET_FIELDS[k]=def.fields||[];
         }
       });
       buildDevicePanel();
