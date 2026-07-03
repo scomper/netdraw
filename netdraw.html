@@ -2536,6 +2536,10 @@ function buildOrthogonalPath(waypoints){
 function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
   // Orthogonal routing mode
   if(routing==='orthogonal'&&sourceNode&&targetNode){
+    // If user manually adjusted waypoints, use cached version
+    if(edge&&edge._manualWP&&edge._waypoints&&edge._waypoints.length>=2){
+      return buildOrthogonalPath(edge._waypoints);
+    }
     const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp,edge);
     if(waypoints&&waypoints.length>=2){
       if(edge)edge._waypoints=waypoints; // cache for handle editing
@@ -2894,6 +2898,7 @@ function bindEvents(){
           const bestAnchor=best.dataset.anchor||'';
           if(endpoint==='source'){edge.source=best.dataset.nodeId;edge.sourcePort=bestAnchor;}
           else{edge.target=best.dataset.nodeId;edge.targetPort=bestAnchor;}
+          edge._manualWP=false;
           renderAll();selectEdge(edge.id);
           const targetNode=nodes.find(n=>n.id===best.dataset.nodeId);
           toast(`已重连到「${targetNode?targetNode.label:'?'}」的 ${bestAnchor} 端口`);
@@ -2936,7 +2941,7 @@ function bindEvents(){
       };
       const onWU=()=>{
         document.removeEventListener('mousemove',onWM);document.removeEventListener('mouseup',onWU);
-        _dirty=true;saveAllCanvases();
+        edge._manualWP=true;_dirty=true;saveAllCanvases();
       };
       document.addEventListener('mousemove',onWM);document.addEventListener('mouseup',onWU);
       return;
@@ -2981,7 +2986,7 @@ function bindEvents(){
       };
       const onSU=()=>{
         document.removeEventListener('mousemove',onSM);document.removeEventListener('mouseup',onSU);
-        _dirty=true;saveAllCanvases();
+        edge._manualWP=true;_dirty=true;saveAllCanvases();
       };
       document.addEventListener('mousemove',onSM);document.addEventListener('mouseup',onSU);
       return;
@@ -3123,6 +3128,7 @@ function bindEvents(){
       });
       edges.forEach(ed=>{
         if(movedIds.includes(ed.source)||movedIds.includes(ed.target)){
+          ed._manualWP=false; // clear manual adjustment when node moves
           const ep=getEdgeEndpoints(ed);if(!ep)return;
           const sn=nodes.find(nn=>nn.id===ed.source),tn=nodes.find(nn=>nn.id===ed.target);
           const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp,ed.routing||'',sn,tn,ed);
@@ -3767,7 +3773,7 @@ function renameField(nid,idx){
 }
 function moveField(nid,idx,dir){const node=nodes.find(n=>n.id===nid);if(!node)return;const target=idx+dir;if(target<0||target>=node.fields.length)return;pushUndo();[node.fields[idx],node.fields[target]]=[node.fields[target],node.fields[idx]];showNodePanel(node);renderAll();}
 function updateFieldValue(nid,key,value){const node=nodes.find(n=>n.id===nid);if(node){const f=node.fields.find(f=>f.key===key);if(f)f.value=value;}}
-function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;if(key==='routing'){_lastRouting=value;}renderAll();if(sel===id)showEdgePanel(edge);}}
+function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;if(key==='routing'){_lastRouting=value;edge._manualWP=false;}renderAll();if(sel===id)showEdgePanel(edge);}}
 function saveAsTemplate(nid){
   const node=nodes.find(n=>n.id===nid);
   if(!node)return;
