@@ -2,7 +2,7 @@
 
 一个轻量级的网络拓扑图绘制工具，单个 HTML 文件即可运行，无需服务器、无需安装。
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![HTML](https://img.shields.io/badge/HTML-Single%20File-orange)
 
@@ -27,7 +27,7 @@
 
 **多画布管理** — 一个文件里可以保存多张拓扑图，通过底部标签切换，适合管理不同项目的网络架构。
 
-**连线样式** — 四种连线样式（默认、主干链路、安全链路、异步/备份），两种动画效果（光点流动、虚线流动），让拓扑图一目了然。
+**连线样式** — 两种路由模式（曲线、折线正交），四种连线样式（默认、主干链路、安全链路、异步/备份），两种动画效果（光点流动、虚线流动），让拓扑图一目了然。折线支持拐点拖拽编辑和相邻线段自动对齐。
 
 **智能排版** — 自动排版根据连线关系分析层级结构，一键对齐所有设备。选中多个对象后可以水平/垂直对齐、等间距分布。
 
