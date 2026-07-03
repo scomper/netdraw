@@ -2205,8 +2205,9 @@ function renderAll(){
           wh.style.cursor='move';
           wrapper.appendChild(wh);
         });
-        // Segment handles (blue rectangles on segment midpoints)
+        // Segment handles (blue rectangles on mid-segments between corners only)
         for(let si=0;si<wps.length-1;si++){
+          if(si===0||si===wps.length-2)continue; // skip first/last (node connection segments)
           const p1=wps[si],p2=wps[si+1];
           const mx=(p1[0]+p2[0])/2,my=(p1[1]+p2[1])/2;
           const len=Math.hypot(p2[0]-p1[0],p2[1]-p1[1]);
@@ -2406,56 +2407,76 @@ function _centerlineAdjust(route,cx,cy,srcRect,tgtRect){
   return path;
 }
 function _countTurns(pts){let t=0;for(let i=2;i<pts.length;i++){if(pts[i-2][0]!==pts[i][0]&&pts[i-2][1]!==pts[i][1])t++;}return t;}
+function _pathLength(pts){let l=0;for(let i=1;i<pts.length;i++)l+=Math.abs(pts[i][0]-pts[i-1][0])+Math.abs(pts[i][1]-pts[i-1][1]);return l;}
 function _rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
-// Main: generate orthogonal route between two nodes
-function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
-  const MARGIN=ORTHO_MARGIN;
-  const sw=160,sh=getNodeCardHeight(srcNode),tw=160,th=getNodeCardHeight(tgtNode);
-  const srcRect={x:srcNode.x-sw/2-MARGIN,y:srcNode.y-sh/2-MARGIN,w:sw+MARGIN*2,h:sh+MARGIN*2};
-  const tgtRect={x:tgtNode.x-tw/2-MARGIN,y:tgtNode.y-th/2-MARGIN,w:tw+MARGIN*2,h:th+MARGIN*2};
-  // Anchor positions (exact node edge positions - NO gap)
-  const hw=80,hhSrc=sh/2,hhTgt=th/2;
-  const anchorPos={top:[0,-hhSrc],bottom:[0,hhSrc],left:[-hw,0],right:[hw,0]};
-  const spOff=anchorPos[sp]||anchorPos.right,tpOff=anchorPos[tp]||anchorPos.left;
-  const sx=srcNode.x+spOff[0],sy=srcNode.y+spOff[1];
-  const tx=tgtNode.x+tpOff[0],ty=tgtNode.y+tpOff[1];
-  // Next points (on the outer rectangle boundary)
+// Direct geometric path with ≤2 turns for a given port pair
+function _generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M){
   const dirMap={top:[0,-1],bottom:[0,1],left:[-1,0],right:[1,0]};
-  const sDir=dirMap[sp]||dirMap.right,tDir=dirMap[tp]||dirMap.left;
-  // Snap next-points to the outer rectangle edges
-  let nsx=sx,nsy=sy,ntx=tx,nty=ty;
-  if(sDir[0]===-1)nsx=srcRect.x;else if(sDir[0]===1)nsx=srcRect.x+srcRect.w;
-  if(sDir[1]===-1)nsy=srcRect.y;else if(sDir[1]===1)nsy=srcRect.y+srcRect.h;
-  if(tDir[0]===-1)ntx=tgtRect.x;else if(tDir[0]===1)ntx=tgtRect.x+tgtRect.w;
-  if(tDir[1]===-1)nty=tgtRect.y;else if(tDir[1]===1)nty=tgtRect.y+tgtRect.h;
-  // Generate grid points and graph (add anchor and next-points to grid)
-  const points=_getOrthoPoints(srcRect,tgtRect,sp,tp);
-  // Ensure anchor and next-points are in the grid
-  [[sx,sy],[tx,ty],[nsx,nsy],[ntx,nty]].forEach(p=>{
-    if(!points.some(q=>q[0]===p[0]&&q[1]===p[1]))points.push(p);
-  });
-  if(!points.length){
-    // Fallback: simple L-shaped path
-    return[[sx,sy],[nsx,nsy],[ntx,nty],[tx,ty]];
+  const anchorOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]};
+  const sOff=anchorOff[sp],tOff=anchorOff[tp];
+  const sDir=dirMap[sp];
+  const ax=srcNode.x+sOff[0],ay=srcNode.y+sOff[1];
+  const bx=tgtNode.x+tOff[0],by=tgtNode.y+tOff[1];
+  const ex=ax+sDir[0]*M,ey=ay+sDir[1]*M;
+  const sH=sDir[0]!==0;
+  const path=[[ax,ay],[ex,ey]];
+  if(sH){
+    if(ey===by){path.push([bx,by]);}
+    else{path.push([ex,by]);path.push([bx,by]);}
+  }else{
+    if(ex===bx){path.push([bx,by]);}
+    else{path.push([bx,ey]);path.push([bx,by]);}
   }
-  const graph=_buildOrthoGraph(points);
-  // A* search from nextSourcePoint to nextTargetPoint
-  let route=_astarSearch(graph,[nsx,nsy],[ntx,nty],[sx,sy]);
-  if(!route.length){
-    // Fallback: simple L-shaped path via midpoints
-    const midX=(nsx+ntx)/2,midY=(nsy+nty)/2;
-    if(Math.abs(nsx-ntx)>Math.abs(nsy-nty)){
-      return[[sx,sy],[nsx,nsy],[midX,nsy],[midX,nty],[ntx,nty],[tx,ty]];
-    }else{
-      return[[sx,sy],[nsx,nsy],[nsx,midY],[ntx,midY],[ntx,nty],[tx,ty]];
+  return _simplifyOrtho(path);
+}
+// Check if the last segment approaches the target from the correct side
+function _isValidApproach(path,tp){
+  if(path.length<2)return false;
+  const last=path[path.length-1],prev=path[path.length-2];
+  const dx=Math.sign(last[0]-prev[0]),dy=Math.sign(last[1]-prev[1]);
+  // Approach direction: left→Right(1,0), right→Left(-1,0), top→Down(0,1), bottom→Up(0,-1)
+  const app={left:[1,0],right:[-1,0],top:[0,1],bottom:[0,-1]}[tp];
+  return dx===app[0]&&dy===app[1];
+}
+// Main: generate orthogonal route with ≤2 turns, auto-select best ports
+function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
+  const hw=80,sh=getNodeCardHeight(srcNode),th=getNodeCardHeight(tgtNode);
+  const M=ORTHO_MARGIN;
+  // Step 1: auto-select best ports based on nearest anchor
+  const best=getBestAnchor(srcNode,tgtNode);
+  const autoSP=sp||best.sourcePort,autoTP=tp||best.targetPort;
+  const ports=['top','bottom','left','right'];
+  let bestRoute=null,bestTurns=999,bestSP=autoSP,bestTP=autoTP,bestLen=Infinity;
+  // Step 2: try auto-selected ports first, then all combinations
+  const combos=[[autoSP,autoTP]];
+  for(const p of ports){if(p!==autoTP)combos.push([autoSP,p]);}
+  for(const p of ports){if(p!==autoSP)combos.push([p,autoTP]);}
+  for(const p1 of ports)for(const p2 of ports){
+    if(combos.some(c=>c[0]===p1&&c[1]===p2))continue;
+    combos.push([p1,p2]);
+  }
+  for(const[testSP,testTP]of combos){
+    const route=_generateDirectPath(srcNode,tgtNode,testSP,testTP,hw,sh,th,M);
+    if(!route)continue;
+    if(!_isValidApproach(route,testTP))continue; // must approach from correct side
+    const turns=_countTurns(route);
+    if(turns>2)continue; // max 2 turns
+    const len=_pathLength(route);
+    if(turns<bestTurns||(turns===bestTurns&&len<bestLen)){
+      bestRoute=route;bestTurns=turns;bestSP=testSP;bestTP=testTP;bestLen=len;
+      if(turns<=1)break; // 0-1 turns is optimal enough
     }
   }
-  route=[[sx,sy],...route,[ntx,nty],[tx,ty]];
-  // Simplify: remove collinear points
-  route=_simplifyOrtho(route);
-  // Align with adjacent edges
-  if(edge)route=_alignWithAdjacentEdges(route,edge);
-  return route;
+  // Step 3: update edge ports if changed
+  if(edge&&(bestSP!==(sp||autoSP)||bestTP!==(tp||autoTP))){
+    edge.sourcePort=bestSP;edge.targetPort=bestTP;
+  }
+  if(bestRoute){
+    if(edge)bestRoute=_alignWithAdjacentEdges(bestRoute,edge);
+    return bestRoute;
+  }
+  // Fallback: use auto-selected ports
+  return _generateDirectPath(srcNode,tgtNode,autoSP,autoTP,hw,sh,th,M);
 }
 // Align polyline segments with adjacent edges
 function _alignWithAdjacentEdges(route,currentEdge){
