@@ -2410,76 +2410,63 @@ function _centerlineAdjust(route,cx,cy,srcRect,tgtRect){
 function _countTurns(pts){let t=0;for(let i=2;i<pts.length;i++){if(pts[i-2][0]!==pts[i][0]&&pts[i-2][1]!==pts[i][1])t++;}return t;}
 function _pathLength(pts){let l=0;for(let i=1;i<pts.length;i++)l+=Math.abs(pts[i][0]-pts[i-1][0])+Math.abs(pts[i][1]-pts[i-1][1]);return l;}
 function _rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
-// Direct geometric path with ≤2 turns for a given port pair
+// Direct geometric path for a given port pair, always approaches target from correct side
 function _generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M){
   const dirMap={top:[0,-1],bottom:[0,1],left:[-1,0],right:[1,0]};
-  const sDir=dirMap[sp];
-  // Source anchor (uses source node height)
+  const sDir=dirMap[sp],tDir=dirMap[tp];
   const sOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]}[sp];
-  // Target anchor (uses target node height)
   const tOff={top:[0,-th/2],bottom:[0,th/2],left:[-hw,0],right:[hw,0]}[tp];
   const ax=srcNode.x+sOff[0],ay=srcNode.y+sOff[1];
   const bx=tgtNode.x+tOff[0],by=tgtNode.y+tOff[1];
   const ex=ax+sDir[0]*M,ey=ay+sDir[1]*M;
-  const sH=sDir[0]!==0;
+  const fx=bx+tDir[0]*M,fy=by+tDir[1]*M;
+  const sH=sDir[0]!==0,tH=tDir[0]!==0;
   const path=[[ax,ay],[ex,ey]];
-  if(sH){
+  if(sH&&tH){
     if(ey===by){path.push([bx,by]);}
-    else{path.push([ex,by]);path.push([bx,by]);}
-  }else{
+    else{path.push([ex,fy]);path.push([fx,fy]);path.push([bx,by]);}
+  }else if(!sH&&!tH){
     if(ex===bx){path.push([bx,by]);}
-    else{path.push([ex,by]);path.push([bx,by]);}
+    else{path.push([fx,ey]);path.push([fx,fy]);path.push([bx,by]);}
+  }else if(sH&&!tH){
+    path.push([fx,ey]);path.push([fx,fy]);path.push([bx,by]);
+  }else{
+    path.push([ex,fy]);path.push([fx,fy]);path.push([bx,by]);
   }
   return _simplifyOrtho(path);
 }
-// Check if the last segment approaches the target from the correct side
-function _isValidApproach(path,tp){
-  if(path.length<2)return false;
-  const last=path[path.length-1],prev=path[path.length-2];
-  const dx=Math.sign(last[0]-prev[0]),dy=Math.sign(last[1]-prev[1]);
-  // Approach direction: left→Right(1,0), right→Left(-1,0), top→Down(0,1), bottom→Up(0,-1)
-  const app={left:[1,0],right:[-1,0],top:[0,1],bottom:[0,-1]}[tp];
-  return dx===app[0]&&dy===app[1];
+// Check if all turns in path are exactly 90° (no >180° turns)
+function _hasValidTurns(path){
+  for(let i=2;i<path.length;i++){
+    const d1x=path[i-1][0]-path[i-2][0],d1y=path[i-1][1]-path[i-2][1];
+    const d2x=path[i][0]-path[i-1][0],d2y=path[i][1]-path[i-1][1];
+    // Must be orthogonal: one horizontal, one vertical
+    if((d1x!==0&&d1y!==0)||(d2x!==0&&d2y!==0))return false;
+    // Must not be collinear (that's a straight line, not a turn)
+    // Must not reverse direction (that's a >180° turn)
+    if(d1x!==0&&d2x!==0&&Math.sign(d1x)!==Math.sign(d2x))return false;
+    if(d1y!==0&&d2y!==0&&Math.sign(d1y)!==Math.sign(d2y))return false;
+  }
+  return true;
 }
-// Main: generate orthogonal route with ≤2 turns, auto-select best ports
+// Main: generate orthogonal route, always respect user-selected ports
 function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
   const hw=80,sh=getNodeCardHeight(srcNode),th=getNodeCardHeight(tgtNode);
   const M=ORTHO_MARGIN;
-  const ports=['top','bottom','left','right'];
-  // Step 1: try user-specified ports first
+  // Always use the specified ports - never auto-change
   const route=_generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M);
-  if(route&&_isValidApproach(route,tp)&&_countTurns(route)<=2){
+  if(route&&route.length>=2){
     if(edge)edge._waypoints=route;
     return edge?_alignWithAdjacentEdges(route,edge):route;
   }
-  // Step 2: user-specified ports produce >2 turns, try all combinations
-  const best=getBestAnchor(srcNode,tgtNode);
-  const fallbackSP=best.sourcePort,fallbackTP=best.targetPort;
-  let bestRoute=null,bestTurns=999,bestSP=fallbackSP,bestTP=fallbackTP,bestLen=Infinity;
-  const combos=[];
-  for(const p1 of ports)for(const p2 of ports)combos.push([p1,p2]);
-  for(const[testSP,testTP]of combos){
-    const r=_generateDirectPath(srcNode,tgtNode,testSP,testTP,hw,sh,th,M);
-    if(!r)continue;
-    if(!_isValidApproach(r,testTP))continue;
-    const turns=_countTurns(r);
-    if(turns>2)continue;
-    const len=_pathLength(r);
-    if(turns<bestTurns||(turns===bestTurns&&len<bestLen)){
-      bestRoute=r;bestTurns=turns;bestSP=testSP;bestTP=testTP;bestLen=len;
-      if(turns<=1)break;
-    }
-  }
-  // Step 3: update edge ports if changed
-  if(edge&&(bestSP!==sp||bestTP!==tp)){
-    edge.sourcePort=bestSP;edge.targetPort=bestTP;
-  }
-  if(bestRoute){
-    if(edge)bestRoute=_alignWithAdjacentEdges(bestRoute,edge);
-    return bestRoute;
-  }
-  // Fallback: use auto-selected ports
-  return _generateDirectPath(srcNode,tgtNode,fallbackSP,fallbackTP,hw,sh,th,M);
+  // Fallback: L-shape via midpoint
+  const sOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]}[sp];
+  const tOff={top:[0,-th/2],bottom:[0,th/2],left:[-hw,0],right:[hw,0]}[tp];
+  const ax=srcNode.x+sOff[0],ay=srcNode.y+sOff[1];
+  const bx=tgtNode.x+tOff[0],by=tgtNode.y+tOff[1];
+  const fallback=[[ax,ay],[(ax+bx)/2,ay],[(ax+bx)/2,by],[bx,by]];
+  if(edge)edge._waypoints=fallback;
+  return fallback;
 }
 // Align polyline segments with adjacent edges
 function _alignWithAdjacentEdges(route,currentEdge){
@@ -2548,10 +2535,6 @@ function buildOrthogonalPath(waypoints){
 function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
   // Orthogonal routing mode
   if(routing==='orthogonal'&&sourceNode&&targetNode){
-    // If user manually adjusted waypoints, use cached version
-    if(edge&&edge._userModified&&edge._waypoints&&edge._waypoints.length>=2){
-      return buildOrthogonalPath(edge._waypoints);
-    }
     const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp,edge);
     if(waypoints&&waypoints.length>=2){
       if(edge)edge._waypoints=waypoints; // cache for handle editing
@@ -2940,7 +2923,6 @@ function bindEvents(){
         const GRID=10;
         edge._waypoints[wi][0]=Math.round((startWX+dx)/GRID)*GRID;
         edge._waypoints[wi][1]=Math.round((startWY+dy)/GRID)*GRID;
-        edge._userModified=true; // prevent regeneration on renderAll
         // Update the edge path directly
         const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
         if(eg){
@@ -2986,7 +2968,6 @@ function bindEvents(){
           edge._waypoints[si][0]=startP1[0]+offset;
           edge._waypoints[si+1][0]=startP2[0]+offset;
         }
-        edge._userModified=true; // prevent regeneration on renderAll
         // Update the edge path directly
         const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
         if(eg){
@@ -3782,7 +3763,7 @@ function renameField(nid,idx){
 }
 function moveField(nid,idx,dir){const node=nodes.find(n=>n.id===nid);if(!node)return;const target=idx+dir;if(target<0||target>=node.fields.length)return;pushUndo();[node.fields[idx],node.fields[target]]=[node.fields[target],node.fields[idx]];showNodePanel(node);renderAll();}
 function updateFieldValue(nid,key,value){const node=nodes.find(n=>n.id===nid);if(node){const f=node.fields.find(f=>f.key===key);if(f)f.value=value;}}
-function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;if(key==='routing'){edge._userModified=false;_lastRouting=value;}renderAll();if(sel===id)showEdgePanel(edge);}}
+function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;if(key==='routing'){_lastRouting=value;}renderAll();if(sel===id)showEdgePanel(edge);}}
 function saveAsTemplate(nid){
   const node=nodes.find(n=>n.id===nid);
   if(!node)return;
