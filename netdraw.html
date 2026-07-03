@@ -2408,7 +2408,7 @@ function _centerlineAdjust(route,cx,cy,srcRect,tgtRect){
 function _countTurns(pts){let t=0;for(let i=2;i<pts.length;i++){if(pts[i-2][0]!==pts[i][0]&&pts[i-2][1]!==pts[i][1])t++;}return t;}
 function _rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
 // Main: generate orthogonal route between two nodes
-function buildOrthogonalRoute(srcNode,tgtNode,sp,tp){
+function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
   const MARGIN=ORTHO_MARGIN;
   const sw=160,sh=getNodeCardHeight(srcNode),tw=160,th=getNodeCardHeight(tgtNode);
   const srcRect={x:srcNode.x-sw/2-MARGIN,y:srcNode.y-sh/2-MARGIN,w:sw+MARGIN*2,h:sh+MARGIN*2};
@@ -2453,7 +2453,54 @@ function buildOrthogonalRoute(srcNode,tgtNode,sp,tp){
   route=[[sx,sy],...route,[ntx,nty],[tx,ty]];
   // Simplify: remove collinear points
   route=_simplifyOrtho(route);
+  // Align with adjacent edges
+  if(edge)route=_alignWithAdjacentEdges(route,edge);
   return route;
+}
+// Align polyline segments with adjacent edges
+function _alignWithAdjacentEdges(route,currentEdge){
+  if(route.length<4)return route;
+  const SNAP_DIST=15; // snap distance in px
+  const otherEdges=edges.filter(e=>e.id!==currentEdge.id&&e.routing==='orthogonal'&&e._waypoints&&e._waypoints.length>=2);
+  if(!otherEdges.length)return route;
+  const result=[...route.map(p=>[...p])]; // deep copy
+  // For each segment in current route
+  for(let i=1;i<result.length-1;i++){
+    const p1=result[i-1],p2=result[i];
+    const isH=Math.abs(p1[1]-p2[1])<2; // horizontal segment
+    const isV=Math.abs(p1[0]-p2[0])<2; // vertical segment
+    if(!isH&&!isV)continue;
+    // Check against all segments in other edges
+    for(const other of otherEdges){
+      if(!other._waypoints)continue;
+      for(let j=0;j<other._waypoints.length-1;j++){
+        const q1=other._waypoints[j],q2=other._waypoints[j+1];
+        const otherIsH=Math.abs(q1[1]-q2[1])<2;
+        const otherIsV=Math.abs(q1[0]-q2[0])<2;
+        // Check if segments are parallel and close
+        if(isH&&otherIsH){
+          // Both horizontal: check Y alignment
+          const yDiff=Math.abs(p1[1]-q1[1]);
+          if(yDiff<SNAP_DIST){
+            // Snap to the same Y
+            const snapY=q1[1];
+            result[i-1][1]=snapY;
+            result[i][1]=snapY;
+          }
+        }else if(isV&&otherIsV){
+          // Both vertical: check X alignment
+          const xDiff=Math.abs(p1[0]-q1[0]);
+          if(xDiff<SNAP_DIST){
+            // Snap to the same X
+            const snapX=q1[0];
+            result[i-1][0]=snapX;
+            result[i][0]=snapX;
+          }
+        }
+      }
+    }
+  }
+  return result;
 }
 function _simplifyOrtho(pts){
   if(pts.length<3)return pts;
@@ -2477,7 +2524,7 @@ function buildOrthogonalPath(waypoints){
 function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
   // Orthogonal routing mode
   if(routing==='orthogonal'&&sourceNode&&targetNode){
-    const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp);
+    const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp,edge);
     if(waypoints&&waypoints.length>=2){
       if(edge)edge._waypoints=waypoints; // cache for handle editing
       return buildOrthogonalPath(waypoints);
