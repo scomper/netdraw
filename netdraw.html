@@ -2456,8 +2456,9 @@ function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
   // Always use the specified ports - never auto-change
   const route=_generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M);
   if(route&&route.length>=2){
-    if(edge)edge._waypoints=route;
-    return edge?_alignWithAdjacentEdges(route,edge):route;
+    const aligned=edge?_alignWithAdjacentEdges(route,edge):route;
+    if(edge)edge._waypoints=aligned;
+    return aligned;
   }
   // Fallback: L-shape via midpoint
   const sOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]}[sp];
@@ -2935,7 +2936,7 @@ function bindEvents(){
       };
       const onWU=()=>{
         document.removeEventListener('mousemove',onWM);document.removeEventListener('mouseup',onWU);
-        _dirty=true;renderAll();
+        _dirty=true;saveAllCanvases();
       };
       document.addEventListener('mousemove',onWM);document.addEventListener('mouseup',onWU);
       return;
@@ -2958,26 +2959,29 @@ function bindEvents(){
         const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
         const GRID=10;
         if(isH){
-          // Horizontal segment: move vertically
           const offset=Math.round(dy/GRID)*GRID;
           edge._waypoints[si][1]=startP1[1]+offset;
           edge._waypoints[si+1][1]=startP2[1]+offset;
         }else{
-          // Vertical segment: move horizontally
           const offset=Math.round(dx/GRID)*GRID;
           edge._waypoints[si][0]=startP1[0]+offset;
           edge._waypoints[si+1][0]=startP2[0]+offset;
         }
-        // Update the edge path directly
+        // Update edge path and handle position directly
         const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
         if(eg){
           const d=buildOrthogonalPath(edge._waypoints);
           eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
         }
+        // Move the segment handle
+        const wp1=edge._waypoints[si],wp2=edge._waypoints[si+1];
+        const mx=(wp1[0]+wp2[0])/2,my=(wp1[1]+wp2[1])/2;
+        if(isH){sph.setAttribute('x',mx-12);sph.setAttribute('y',my-4);}
+        else{sph.setAttribute('x',mx-4);sph.setAttribute('y',my-12);}
       };
       const onSU=()=>{
         document.removeEventListener('mousemove',onSM);document.removeEventListener('mouseup',onSU);
-        _dirty=true;renderAll();
+        _dirty=true;saveAllCanvases();
       };
       document.addEventListener('mousemove',onSM);document.addEventListener('mouseup',onSU);
       return;
