@@ -816,6 +816,7 @@ let viewMode='full'; // 'full' | 'hi'
 let selBox=null; // {startX, startY} for rubber band
 let multiDragOffsets=null; // {id:{dx,dy}} for multi-select drag
 let _dirty=false; // auto-save flag
+let _lastRouting=''; // remember last routing mode for new edges
 let _clipboard={nodes:[],edges:[]}; // copy/paste buffer
 let _pasteOffset=0; // cumulative paste offset for repeated Ctrl+V
 let _lastFileHandle=null; // FileSystemFileHandle for overwrite save
@@ -1780,7 +1781,7 @@ function createEdge(source,target,sp,tp,label){
     const sNode=nodes.find(n=>n.id===source),tNode=nodes.find(n=>n.id===target);
     if(sNode&&tNode){const best=getBestAnchor(sNode,tNode);if(!sp)sp=best.sourcePort;if(!tp)tp=best.targetPort;}
   }
-  return{id:uid(),source,target,sourcePort:sp||'',targetPort:tp||'',label:label||'',sourceLabel:'',targetLabel:'',labelOffX:0,labelOffY:0,variant:'default',routing:''};
+  return{id:uid(),source,target,sourcePort:sp||'',targetPort:tp||'',label:label||'',sourceLabel:'',targetLabel:'',labelOffX:0,labelOffY:0,variant:'default',routing:_lastRouting||''};
 }
 
 // ===== RENDER =====
@@ -2412,9 +2413,11 @@ function _rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.
 // Direct geometric path with ≤2 turns for a given port pair
 function _generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M){
   const dirMap={top:[0,-1],bottom:[0,1],left:[-1,0],right:[1,0]};
-  const anchorOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]};
-  const sOff=anchorOff[sp],tOff=anchorOff[tp];
   const sDir=dirMap[sp];
+  // Source anchor (uses source node height)
+  const sOff={top:[0,-sh/2],bottom:[0,sh/2],left:[-hw,0],right:[hw,0]}[sp];
+  // Target anchor (uses target node height)
+  const tOff={top:[0,-th/2],bottom:[0,th/2],left:[-hw,0],right:[hw,0]}[tp];
   const ax=srcNode.x+sOff[0],ay=srcNode.y+sOff[1];
   const bx=tgtNode.x+tOff[0],by=tgtNode.y+tOff[1];
   const ex=ax+sDir[0]*M,ey=ay+sDir[1]*M;
@@ -2545,6 +2548,10 @@ function buildOrthogonalPath(waypoints){
 function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
   // Orthogonal routing mode
   if(routing==='orthogonal'&&sourceNode&&targetNode){
+    // If user manually adjusted waypoints, use cached version
+    if(edge&&edge._userModified&&edge._waypoints&&edge._waypoints.length>=2){
+      return buildOrthogonalPath(edge._waypoints);
+    }
     const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp,edge);
     if(waypoints&&waypoints.length>=2){
       if(edge)edge._waypoints=waypoints; // cache for handle editing
@@ -2933,6 +2940,7 @@ function bindEvents(){
         const GRID=10;
         edge._waypoints[wi][0]=Math.round((startWX+dx)/GRID)*GRID;
         edge._waypoints[wi][1]=Math.round((startWY+dy)/GRID)*GRID;
+        edge._userModified=true; // prevent regeneration on renderAll
         // Update the edge path directly
         const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
         if(eg){
@@ -2978,6 +2986,7 @@ function bindEvents(){
           edge._waypoints[si][0]=startP1[0]+offset;
           edge._waypoints[si+1][0]=startP2[0]+offset;
         }
+        edge._userModified=true; // prevent regeneration on renderAll
         // Update the edge path directly
         const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
         if(eg){
@@ -3773,7 +3782,7 @@ function renameField(nid,idx){
 }
 function moveField(nid,idx,dir){const node=nodes.find(n=>n.id===nid);if(!node)return;const target=idx+dir;if(target<0||target>=node.fields.length)return;pushUndo();[node.fields[idx],node.fields[target]]=[node.fields[target],node.fields[idx]];showNodePanel(node);renderAll();}
 function updateFieldValue(nid,key,value){const node=nodes.find(n=>n.id===nid);if(node){const f=node.fields.find(f=>f.key===key);if(f)f.value=value;}}
-function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;renderAll();if(sel===id)showEdgePanel(edge);}}
+function updateEdge(id,key,value){const edge=edges.find(e=>e.id===id);if(edge){pushUndo();edge[key]=value;if(key==='routing'){edge._userModified=false;_lastRouting=value;}renderAll();if(sel===id)showEdgePanel(edge);}}
 function saveAsTemplate(nid){
   const node=nodes.find(n=>n.id===nid);
   if(!node)return;
