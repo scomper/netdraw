@@ -2428,7 +2428,7 @@ function _generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M){
     else{path.push([ex,by]);path.push([bx,by]);}
   }else{
     if(ex===bx){path.push([bx,by]);}
-    else{path.push([bx,ey]);path.push([bx,by]);}
+    else{path.push([ex,by]);path.push([bx,by]);}
   }
   return _simplifyOrtho(path);
 }
@@ -2445,33 +2445,33 @@ function _isValidApproach(path,tp){
 function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
   const hw=80,sh=getNodeCardHeight(srcNode),th=getNodeCardHeight(tgtNode);
   const M=ORTHO_MARGIN;
-  // Step 1: auto-select best ports based on nearest anchor
-  const best=getBestAnchor(srcNode,tgtNode);
-  const autoSP=sp||best.sourcePort,autoTP=tp||best.targetPort;
   const ports=['top','bottom','left','right'];
-  let bestRoute=null,bestTurns=999,bestSP=autoSP,bestTP=autoTP,bestLen=Infinity;
-  // Step 2: try auto-selected ports first, then all combinations
-  const combos=[[autoSP,autoTP]];
-  for(const p of ports){if(p!==autoTP)combos.push([autoSP,p]);}
-  for(const p of ports){if(p!==autoSP)combos.push([p,autoTP]);}
-  for(const p1 of ports)for(const p2 of ports){
-    if(combos.some(c=>c[0]===p1&&c[1]===p2))continue;
-    combos.push([p1,p2]);
+  // Step 1: try user-specified ports first
+  const route=_generateDirectPath(srcNode,tgtNode,sp,tp,hw,sh,th,M);
+  if(route&&_isValidApproach(route,tp)&&_countTurns(route)<=2){
+    if(edge)edge._waypoints=route;
+    return edge?_alignWithAdjacentEdges(route,edge):route;
   }
+  // Step 2: user-specified ports produce >2 turns, try all combinations
+  const best=getBestAnchor(srcNode,tgtNode);
+  const fallbackSP=best.sourcePort,fallbackTP=best.targetPort;
+  let bestRoute=null,bestTurns=999,bestSP=fallbackSP,bestTP=fallbackTP,bestLen=Infinity;
+  const combos=[];
+  for(const p1 of ports)for(const p2 of ports)combos.push([p1,p2]);
   for(const[testSP,testTP]of combos){
-    const route=_generateDirectPath(srcNode,tgtNode,testSP,testTP,hw,sh,th,M);
-    if(!route)continue;
-    if(!_isValidApproach(route,testTP))continue; // must approach from correct side
-    const turns=_countTurns(route);
-    if(turns>2)continue; // max 2 turns
-    const len=_pathLength(route);
+    const r=_generateDirectPath(srcNode,tgtNode,testSP,testTP,hw,sh,th,M);
+    if(!r)continue;
+    if(!_isValidApproach(r,testTP))continue;
+    const turns=_countTurns(r);
+    if(turns>2)continue;
+    const len=_pathLength(r);
     if(turns<bestTurns||(turns===bestTurns&&len<bestLen)){
-      bestRoute=route;bestTurns=turns;bestSP=testSP;bestTP=testTP;bestLen=len;
-      if(turns<=1)break; // 0-1 turns is optimal enough
+      bestRoute=r;bestTurns=turns;bestSP=testSP;bestTP=testTP;bestLen=len;
+      if(turns<=1)break;
     }
   }
   // Step 3: update edge ports if changed
-  if(edge&&(bestSP!==(sp||autoSP)||bestTP!==(tp||autoTP))){
+  if(edge&&(bestSP!==sp||bestTP!==tp)){
     edge.sourcePort=bestSP;edge.targetPort=bestTP;
   }
   if(bestRoute){
@@ -2479,7 +2479,7 @@ function buildOrthogonalRoute(srcNode,tgtNode,sp,tp,edge){
     return bestRoute;
   }
   // Fallback: use auto-selected ports
-  return _generateDirectPath(srcNode,tgtNode,autoSP,autoTP,hw,sh,th,M);
+  return _generateDirectPath(srcNode,tgtNode,fallbackSP,fallbackTP,hw,sh,th,M);
 }
 // Align polyline segments with adjacent edges
 function _alignWithAdjacentEdges(route,currentEdge){
@@ -3250,7 +3250,7 @@ function bindEvents(){
     if(e.key==='Escape'){sel=null;selSet=new Set();renderAll();showEmptyPanel();}
     if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')&&!e.shiftKey){e.preventDefault();undoAction();}
     if((e.ctrlKey||e.metaKey)&&((e.key==='y'||e.key==='Y')||((e.key==='z'||e.key==='Z')&&e.shiftKey))){e.preventDefault();redoAction();}
-    if((e.ctrlKey||e.metaKey)&&e.key==='a'){e.preventDefault();selSet=new Set(nodes.map(n=>n.id));if(nodes.length)sel=nodes[0].id;openPanel('right');showMultiPanel();renderAll();}
+    if((e.ctrlKey||e.metaKey)&&e.key==='a'){e.preventDefault();selSet=new Set([...nodes.map(n=>n.id),...groups.map(g=>g.id)]);if(nodes.length)sel=nodes[0].id;openPanel('right');showMultiPanel();renderAll();}
     if((e.ctrlKey||e.metaKey)&&e.key==='c'){e.preventDefault();copySelected();}
     if((e.ctrlKey||e.metaKey)&&e.key==='v'){e.preventDefault();paste();}
     if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();manualSave();}
