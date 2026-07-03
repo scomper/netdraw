@@ -1780,7 +1780,7 @@ function createEdge(source,target,sp,tp,label){
     const sNode=nodes.find(n=>n.id===source),tNode=nodes.find(n=>n.id===target);
     if(sNode&&tNode){const best=getBestAnchor(sNode,tNode);if(!sp)sp=best.sourcePort;if(!tp)tp=best.targetPort;}
   }
-  return{id:uid(),source,target,sourcePort:sp||'',targetPort:tp||'',label:label||'',sourceLabel:'',targetLabel:'',labelOffX:0,labelOffY:0,variant:'default'};
+  return{id:uid(),source,target,sourcePort:sp||'',targetPort:tp||'',label:label||'',sourceLabel:'',targetLabel:'',labelOffX:0,labelOffY:0,variant:'default',routing:''};
 }
 
 // ===== RENDER =====
@@ -1821,7 +1821,7 @@ function renderAll(){
     const s=nodeMap.get(e.source),t=nodeMap.get(e.target);
     if(!s||!t)return;
     const ep=getEdgeEndpoints(e);if(!ep)return;
-    const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp);
+    const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp,e.routing||'',s,t,e);
     const eg=document.createElementNS(NS,'g');eg.dataset.edgeId=e.id;
     const hit=document.createElementNS(NS,'path');hit.setAttribute('d',d);hit.setAttribute('stroke','transparent');hit.setAttribute('stroke-width','14');hit.setAttribute('fill','none');hit.setAttribute('class','e-hit');hit.style.pointerEvents='stroke';hit.dataset.edgeId=e.id;eg.appendChild(hit);
     const path=document.createElementNS(NS,'path');path.setAttribute('d',d);path.setAttribute('class','e-line');path.dataset.edgeId=e.id;
@@ -2191,6 +2191,19 @@ function renderAll(){
       th.dataset.edgeId=selEdge.id;th.dataset.endpoint='target';
       th.style.cursor='crosshair';
       wrapper.appendChild(th);
+      // Waypoint handles for orthogonal routing
+      if(selEdge.routing==='orthogonal'&&selEdge._waypoints&&selEdge._waypoints.length>2){
+        selEdge._waypoints.forEach((wp,wi)=>{
+          if(wi===0||wi===selEdge._waypoints.length-1)return; // skip endpoints
+          const wh=document.createElementNS(NS,'circle');
+          wh.setAttribute('cx',wp[0]);wh.setAttribute('cy',wp[1]);wh.setAttribute('r','6');
+          wh.setAttribute('fill','#00b894');wh.setAttribute('stroke',cv.mask);wh.setAttribute('stroke-width','2');
+          wh.setAttribute('class','edge-waypoint-handle');
+          wh.dataset.edgeId=selEdge.id;wh.dataset.waypointIdx=wi;
+          wh.style.cursor='move';
+          wrapper.appendChild(wh);
+        });
+      }
       } // end if(ep)
     }
   }
@@ -2232,10 +2245,213 @@ function getEdgeEndpoints(edge){
   const tpos=getAnchorWorldPos(t.id,tp)||{x:t.x,y:t.y};
   return{sx:spos.x,sy:spos.y,stx:tpos.x,sty:tpos.y,sp,tp};
 }
-function buildEdgePath(sx,sy,tx,ty,sp,tp){
+// ===== ORTHOGONAL ROUTING ENGINE (ported from worktile/plait) =====
+const ORTHO_MARGIN=20; // minimum distance from node edge for orthogonal routes
+// Priority Queue (min-heap by priority)
+class _PQ{constructor(){this.list=[];}
+enqueue(item){this.list.push(item);this._up(this.list.length-1);}
+dequeue(){if(!this.list.length)return null;const top=this.list[0];const last=this.list.pop();if(this.list.length){this.list[0]=last;this._down(0);}return top;}
+_up(i){while(i>0){const p=(i-1)>>1;if(this.list[p].priority<=this.list[i].priority)break;[this.list[p],this.list[i]]=[this.list[i],this.list[p]];i=p;}}
+_down(i){const n=this.list.length;while(true){let s=i,l=2*i+1,r=2*i+2;if(l<n&&this.list[l].priority<this.list[s].priority)s=l;if(r<n&&this.list[r].priority<this.list[s].priority)s=r;if(s===i)break;[this.list[s],this.list[i]]=[this.list[i],this.list[s]];i=s;}}}
+// Point Graph for A*
+class _PtGraph{
+  constructor(){this.nodes=new Map();}
+  _key(p){return p[0]+','+p[1];}
+  has(p){return this.nodes.has(this._key(p));}
+  add(p){const k=this._key(p);if(!this.nodes.has(k))this.nodes.set(k,{data:p,adj:[]});}
+  get(p){return this.nodes.get(this._key(p));}
+  connect(a,b){const na=this.get(a);if(na&&!na.adj.some(n=>n.data[0]===b[0]&&n.data[1]===b[1]))na.adj.push(this.get(b));}
+}
+// A* Search with inflection-point penalty
+function _astarSearch(graph,start,end,prevStart){
+  const frontier=new _PQ();
+  const startNode=graph.get(start);
+  const cameFrom=new Map();
+  const costSoFar=new Map();
+  costSoFar.set(startNode,0);
+  frontier.enqueue({node:startNode,priority:0});
+  while(frontier.list.length>0){
+    const current=frontier.dequeue();if(!current)break;
+    const cp=current.node.data;
+    if(cp[0]===end[0]&&cp[1]===end[1])break;
+    for(const next of current.node.adj){
+      let newCost=costSoFar.get(current.node)+Math.abs(next.data[0]-cp[0])+Math.abs(next.data[1]-cp[1]);
+      const prevNode=cameFrom.get(current.node);
+      const prevPt=prevNode?prevNode.data:prevStart;
+      const sameX=prevPt[0]===cp[0]&&prevPt[0]===next.data[0];
+      const sameY=prevPt[1]===cp[1]&&prevPt[1]===next.data[1];
+      if(!sameX&&!sameY)newCost+=1; // inflection penalty
+      if(!costSoFar.has(next)||newCost<costSoFar.get(next)){
+        costSoFar.set(next,newCost);
+        frontier.enqueue({node:next,priority:newCost+Math.abs(next.data[0]-end[0])+Math.abs(next.data[1]-end[1])});
+        cameFrom.set(next,current.node);
+      }
+    }
+  }
+  // Reconstruct route
+  const result=[];
+  let temp=end;
+  while(temp[0]!==start[0]||temp[1]!==start[1]){
+    const node=graph.get(temp);if(!node)break;
+    const pre=cameFrom.get(node);if(!pre)break;
+    result.unshift(pre.data);
+    temp=pre.data;
+  }
+  return result;
+}
+// Get all candidate grid points for orthogonal routing
+function _getOrthoPoints(srcRect,tgtRect,sp,tp){
+  const xSet=new Set(),ySet=new Set();
+  [srcRect,tgtRect].forEach(r=>{
+    xSet.add(r.x);xSet.add(r.x+r.w/2);xSet.add(r.x+r.w);
+    ySet.add(r.y);ySet.add(r.y+r.h/2);ySet.add(r.y+r.h);
+  });
+  // Gap centerline
+  const rxAll=[srcRect.x,srcRect.x+srcRect.w,tgtRect.x,tgtRect.x+tgtRect.w].sort((a,b)=>a-b);
+  const ryAll=[srcRect.y,srcRect.y+srcRect.h,tgtRect.y,tgtRect.y+tgtRect.h].sort((a,b)=>a-b);
+  if(rxAll[2]>rxAll[1])xSet.add((rxAll[1]+rxAll[2])/2);
+  if(ryAll[2]>ryAll[1])ySet.add((ryAll[1]+ryAll[2])/2);
+  const Xs=[...xSet].sort((a,b)=>a-b),Ys=[...ySet].sort((a,b)=>a-b);
+  const points=[];
+  for(const x of Xs)for(const y of Ys){
+    const inSrc=x>srcRect.x&&x<srcRect.x+srcRect.w&&y>srcRect.y&&y<srcRect.y+srcRect.h;
+    const inTgt=x>tgtRect.x&&x<tgtRect.x+tgtRect.w&&y>tgtRect.y&&y<tgtRect.y+tgtRect.h;
+    if(!inSrc&&!inTgt)points.push([x,y]);
+  }
+  return points;
+}
+function _anchorWorldPos(dir){
+  return{left:[-1,0],right:[1,0],top:[0,-1],bottom:[0,1]}[dir]||[1,0];
+}
+// Build graph from points
+function _buildOrthoGraph(points){
+  const graph=new _PtGraph();
+  points.forEach(p=>graph.add(p));
+  const Xs=[...new Set(points.map(p=>p[0]))].sort((a,b)=>a-b);
+  const Ys=[...new Set(points.map(p=>p[1]))].sort((a,b)=>a-b);
+  for(let i=0;i<Xs.length;i++)for(let j=0;j<Ys.length;j++){
+    const pt=[Xs[i],Ys[j]];if(!graph.has(pt))continue;
+    if(i>0){const l=[Xs[i-1],Ys[j]];if(graph.has(l)){graph.connect(l,pt);graph.connect(pt,l);}}
+    if(j>0){const u=[Xs[i],Ys[j-1]];if(graph.has(u)){graph.connect(u,pt);graph.connect(pt,u);}}
+  }
+  return graph;
+}
+// Center-line correction: snap path to midline between nodes
+function _centerlineAdjust(route,cx,cy,srcRect,tgtRect){
+  let path=[...route];
+  [true,false].forEach(isX=>{
+    const center=isX?cx:cy;if(center==null)return;
+    const axis=isX?0:1;
+    // Find intersection point and parallel segments
+    const parallelSegs=[];let hitPt=null;
+    let segStart=null;
+    for(let i=0;i<path.length;i++){
+      const prev=path[i-1],cur=path[i];
+      if(segStart===null&&prev&&prev[axis]===cur[axis])segStart=prev;
+      if(segStart!==null&&prev[axis]!==cur[axis]){parallelSegs.push([segStart,prev]);segStart=null;}
+      if(cur[axis]===center)hitPt=cur;
+    }
+    if(segStart)parallelSegs.push([segStart,path[path.length-1]]);
+    if(!hitPt)return;
+    for(const seg of parallelSegs){
+      const pts=[hitPt,seg[0],seg[1]];
+      const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+      const rect={x:Math.min(...xs),y:Math.min(...ys),w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
+      // Check no overlap with nodes
+      if(_rectsOverlap(rect,srcRect)||_rectsOverlap(rect,tgtRect))continue;
+      // Find missing corner
+      const corners=[[rect.x,rect.y],[rect.x+rect.w,rect.y],[rect.x,rect.y+rect.h],[rect.x+rect.w,rect.y+rect.h]];
+      const found=path.findIndex(p=>corners.some(c=>c[0]===p[0]&&c[1]===p[1])||p[0]===hitPt[0]&&p[1]===hitPt[1]);
+      const idx0=path.findIndex(p=>p[0]===seg[0][0]&&p[1]===seg[0][1]);
+      const idx1=path.findIndex(p=>p[0]===seg[1][0]&&p[1]===seg[1][1]);
+      if(idx0<0||idx1<0)continue;
+      const miss=corners.find(c=>!path.some(p=>p[0]===c[0]&&p[1]===c[1]));
+      if(!miss)continue;
+      const newPath=[...path];
+      const minIdx=Math.min(idx0,idx1),maxIdx=Math.max(idx0,idx1);
+      newPath.splice(minIdx+1,maxIdx-minIdx-1,miss);
+      // Only accept if turn count doesn't increase
+      const oldTurns=_countTurns(path),newTurns=_countTurns(newPath);
+      if(newTurns<=oldTurns)path=newPath;
+    }
+  });
+  return path;
+}
+function _countTurns(pts){let t=0;for(let i=2;i<pts.length;i++){if(pts[i-2][0]!==pts[i][0]&&pts[i-2][1]!==pts[i][1])t++;}return t;}
+function _rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+// Main: generate orthogonal route between two nodes
+function buildOrthogonalRoute(srcNode,tgtNode,sp,tp){
+  const MARGIN=ORTHO_MARGIN;
+  const sw=160,sh=getNodeCardHeight(srcNode),tw=160,th=getNodeCardHeight(tgtNode);
+  const srcRect={x:srcNode.x-sw/2-MARGIN,y:srcNode.y-sh/2-MARGIN,w:sw+MARGIN*2,h:sh+MARGIN*2};
+  const tgtRect={x:tgtNode.x-tw/2-MARGIN,y:tgtNode.y-th/2-MARGIN,w:tw+MARGIN*2,h:th+MARGIN*2};
+  // Anchor positions (exact node edge positions)
+  const hw=80,hhSrc=sh/2,hhTgt=th/2;
+  const anchorPos={top:[0,-hhSrc],bottom:[0,hhSrc],left:[-hw,0],right:[hw,0]};
+  const spOff=anchorPos[sp]||anchorPos.right,tpOff=anchorPos[tp]||anchorPos.left;
+  const sx=srcNode.x+spOff[0],sy=srcNode.y+spOff[1];
+  const tx=tgtNode.x+tpOff[0],ty=tgtNode.y+tpOff[1];
+  // Next points (on the outer rectangle boundary)
+  const dirMap={top:[0,-1],bottom:[0,1],left:[-1,0],right:[1,0]};
+  const sDir=dirMap[sp]||dirMap.right,tDir=dirMap[tp]||dirMap.left;
+  // Snap next-points to the outer rectangle edges
+  let nsx=sx,nsy=sy,ntx=tx,nty=ty;
+  if(sDir[0]===-1)nsx=srcRect.x;else if(sDir[0]===1)nsx=srcRect.x+srcRect.w;
+  if(sDir[1]===-1)nsy=srcRect.y;else if(sDir[1]===1)nsy=srcRect.y+srcRect.h;
+  if(tDir[0]===-1)ntx=tgtRect.x;else if(tDir[0]===1)ntx=tgtRect.x+tgtRect.w;
+  if(tDir[1]===-1)nty=tgtRect.y;else if(tDir[1]===1)nty=tgtRect.y+tgtRect.h;
+  // Generate grid points and graph (add anchor and next-points to grid)
+  const points=_getOrthoPoints(srcRect,tgtRect,sp,tp);
+  // Ensure anchor and next-points are in the grid
+  [[sx,sy],[tx,ty],[nsx,nsy],[ntx,nty]].forEach(p=>{
+    if(!points.some(q=>q[0]===p[0]&&q[1]===p[1]))points.push(p);
+  });
+  if(!points.length)return null;
+  const graph=_buildOrthoGraph(points);
+  // A* search from nextSourcePoint to nextTargetPoint
+  let route=_astarSearch(graph,[nsx,nsy],[ntx,nty],[sx,sy]);
+  if(!route.length)return null;
+  route=[[sx,sy],...route,[ntx,nty],[tx,ty]];
+  // Center-line correction
+  const cx=srcRect.x+srcRect.w/2===tgtRect.x+tgtRect.w/2?undefined:
+    (srcRect.x+srcRect.w/2+tgtRect.x+tgtRect.w/2)/2;
+  const cy=srcRect.y+srcRect.h/2===tgtRect.y+tgtRect.h/2?undefined:
+    (srcRect.y+srcRect.h/2+tgtRect.y+tgtRect.h/2)/2;
+  // Simplify: remove collinear points
+  route=_simplifyOrtho(route);
+  return route;
+}
+function _simplifyOrtho(pts){
+  if(pts.length<3)return pts;
+  const result=[pts[0]];
+  for(let i=1;i<pts.length-1;i++){
+    const prev=result[result.length-1],cur=pts[i],next=pts[i+1];
+    if(prev[0]===cur[0]&&cur[0]===next[0])continue; // same X, collinear
+    if(prev[1]===cur[1]&&cur[1]===next[1])continue; // same Y, collinear
+    result.push(cur);
+  }
+  result.push(pts[pts.length-1]);
+  return result;
+}
+// Build SVG path from waypoints
+function buildOrthogonalPath(waypoints){
+  if(!waypoints||waypoints.length<2)return'';
+  return'M'+waypoints.map(p=>p[0]+','+p[1]).join('L');
+}
+// ===== END ORTHOGONAL ROUTING ENGINE =====
+
+function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
+  // Orthogonal routing mode
+  if(routing==='orthogonal'&&sourceNode&&targetNode){
+    const waypoints=buildOrthogonalRoute(sourceNode,targetNode,sp,tp);
+    if(waypoints&&waypoints.length>=2){
+      if(edge)edge._waypoints=waypoints; // cache for handle editing
+      return buildOrthogonalPath(waypoints);
+    }
+  }
+  // Default: bezier curve
   const dx=tx-sx,dy=ty-sy,dist=Math.hypot(dx,dy);
   if(dist<20)return`M${sx},${sy}L${tx},${ty}`;
-  // Control point offset: follows anchor direction, scaled by distance
   const offset=Math.min(Math.max(dist*0.35,30),120);
   const sd=ANCHOR_DIR[sp]||ANCHOR_DIR.right,td=ANCHOR_DIR[tp]||ANCHOR_DIR.left;
   const cx1=sx+sd.dx*offset,cy1=sy+sd.dy*offset;
@@ -2598,6 +2814,40 @@ function bindEvents(){
       document.addEventListener('mouseup',onEU);
       return;
     }
+    // Waypoint handle drag (move orthogonal routing waypoints)
+    const wph=e.target.closest('.edge-waypoint-handle');
+    if(wph&&wph.dataset.edgeId){
+      e.preventDefault();e.stopPropagation();
+      const edge=edges.find(ed=>ed.id===wph.dataset.edgeId);if(!edge||!edge._waypoints)return;
+      const wi=parseInt(wph.dataset.waypointIdx);
+      if(isNaN(wi)||!edge._waypoints[wi])return;
+      const rect=svg.getBoundingClientRect();
+      const startMX=(e.clientX-rect.left-panX)/zoom,startMY=(e.clientY-rect.top-panY)/zoom;
+      const startWX=edge._waypoints[wi][0],startWY=edge._waypoints[wi][1];
+      const onWM=ev=>{
+        const r2=svg.getBoundingClientRect();
+        const dx=(ev.clientX-r2.left-panX)/zoom-startMX;
+        const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
+        const GRID=10;
+        edge._waypoints[wi][0]=Math.round((startWX+dx)/GRID)*GRID;
+        edge._waypoints[wi][1]=Math.round((startWY+dy)/GRID)*GRID;
+        // Update the edge path directly
+        const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
+        if(eg){
+          const d=buildOrthogonalPath(edge._waypoints);
+          eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
+          // Move the waypoint handle
+          wph.setAttribute('cx',edge._waypoints[wi][0]);
+          wph.setAttribute('cy',edge._waypoints[wi][1]);
+        }
+      };
+      const onWU=()=>{
+        document.removeEventListener('mousemove',onWM);document.removeEventListener('mouseup',onWU);
+        _dirty=true;renderAll();
+      };
+      document.addEventListener('mousemove',onWM);document.addEventListener('mouseup',onWU);
+      return;
+    }
     // Anchor delegation
     const anchorEl=e.target.closest('.anchor-zone,.anchor');
     if(anchorEl){e.preventDefault();startEdgeDraw(anchorEl);return;}
@@ -2677,7 +2927,8 @@ function bindEvents(){
         edgeEls.forEach(({id,el})=>{
           if(!el)return;const ed=edges.find(ee=>ee.id===id);if(!ed)return;
           const ep=getEdgeEndpoints(ed);if(!ep)return;
-          const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp);
+          const sn=nodes.find(nn=>nn.id===ed.source),tn=nodes.find(nn=>nn.id===ed.target);
+          const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp,ed.routing||'',sn,tn,ed);
           el.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
         });
       };
@@ -2735,7 +2986,8 @@ function bindEvents(){
       edges.forEach(ed=>{
         if(movedIds.includes(ed.source)||movedIds.includes(ed.target)){
           const ep=getEdgeEndpoints(ed);if(!ep)return;
-          const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp);
+          const sn=nodes.find(nn=>nn.id===ed.source),tn=nodes.find(nn=>nn.id===ed.target);
+          const d=buildEdgePath(ep.sx,ep.sy,ep.stx,ep.sty,ep.sp,ep.tp,ed.routing||'',sn,tn,ed);
           const eg=svg.querySelector(`[data-edge-id="${ed.id}"]`);
           if(eg)eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
         }
@@ -3289,9 +3541,16 @@ function showEdgePanel(edge){
   const variantBtns=Object.entries(EDGE_VARIANTS).map(([k,v])=>`<button onclick="updateEdge('${edge.id}','variant','${k}')" title="${v.label}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${curV===k?'#6c5ce7':'transparent'};background:${v.stroke};cursor:pointer;flex-shrink:0"></button>`).join('');
   document.getElementById('rpTitle').innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> 连线';
   const animVal=edge.animated||'';
+  const curR=edge.routing||'';
   document.getElementById('rpBody').innerHTML=`
     <div class="rp-section">连线样式</div>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">${variantBtns}<span style="font-size:11px;color:var(--ink2);margin-left:4px">${EDGE_VARIANTS[curV].label}</span></div>
+    <div class="ff"><label>路由模式</label>
+      <select onchange="updateEdge('${edge.id}','routing',this.value)">
+        <option value=""${!curR?' selected':''}>曲线（贝塞尔）</option>
+        <option value="orthogonal"${curR==='orthogonal'?' selected':''}>折线（正交）</option>
+      </select>
+    </div>
     <div class="ff"><label>连线动画</label>
       <select onchange="updateEdge('${edge.id}','animated',this.value)">
         <option value=""${!animVal?' selected':''}>无</option>
@@ -4502,7 +4761,7 @@ function importAIResult(data){
     const src=idMap[e.source],tgt=idMap[e.target];
     if(!src||!tgt)return null;
     const variant=EDGE_VARIANTS[e.variant]?e.variant:'default';
-    return{id:uid(),source:src,target:tgt,sourcePort:'',targetPort:'',label:e.label||'',sourceLabel:'',targetLabel:'',variant,labelOffX:0,labelOffY:0};
+    return{id:uid(),source:src,target:tgt,sourcePort:'',targetPort:'',label:e.label||'',sourceLabel:'',targetLabel:'',variant,labelOffX:0,labelOffY:0,routing:e.routing||''};
   }).filter(Boolean);
   // 处理分组（根据设备ID列表自动计算包围盒）
   // node.x/node.y 是卡片中心，卡片半宽=80，半高=29
