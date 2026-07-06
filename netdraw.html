@@ -5195,8 +5195,8 @@ function importAIResult(data){
   sel=newNodes[0]?.id||null;
   document.getElementById('docTitle').textContent=newTitle;
   renderAll();renderCanvasDropdown();updateCount();saveAllCanvases();
-  // 自动排版：规整对齐和布局
-  if(selSet.size>=2)autoLayoutSelected();
+  // 自动排版：仅当 AI 未返回坐标时自动布局（保留 AI 图片识别的原始排布）
+  if(!hasCoords&&selSet.size>=2)autoLayoutSelected();
   closeAIDialog();
   toast(`AI 生成完成：${newNodes.length} 个设备，${newEdges.length} 条连线，${newGroups.length} 个分组`);
 }
