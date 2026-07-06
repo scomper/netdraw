@@ -4039,10 +4039,10 @@ function copySelected(){
   }).map(e=>deepClone(e));
   _clipboard={nodes:clipNodes,edges:clipEdges};
   _pasteOffset=0;
-  toast(`已复制 ${clipNodes.length} 个对象`);
+  toast(`已复制 ${clipNodes.length} 个对象${clipEdges.length?' + '+clipEdges.length+' 条连线':''}`);
 }
 function paste(){
-  if(!_clipboard.nodes.length)return;
+  if(!_clipboard.nodes.length&&!_clipboard.edges.length)return;
   pushUndo();
   _pasteOffset++;
   const offset=_pasteOffset*40;
