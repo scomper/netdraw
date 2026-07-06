@@ -819,6 +819,26 @@ function toggleAnnotateMode(){
   btn.classList.toggle('active',annotateMode);
   svg.style.cursor=annotateMode?'crosshair':'';
 }
+function addAnnotationMidpoint(wx,wy){
+  const ann=edges.find(e=>e.id===sel&&e.annotation);
+  if(!ann||!ann.points||ann.points.length<2)return;
+  // 找到最近的线段，在其中插入中间点
+  let bestIdx=1,bestDist=Infinity;
+  for(let i=0;i<ann.points.length-1;i++){
+    const ax=ann.points[i][0],ay=ann.points[i][1],bx=ann.points[i+1][0],by=ann.points[i+1][1];
+    const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+    let t=len2>0?((wx-ax)*dx+(wy-ay)*dy)/len2:0;
+    t=Math.max(0,Math.min(1,t));
+    const px=ax+t*dx,py=ay+t*dy;
+    const dist=Math.hypot(wx-px,wy-py);
+    if(dist<bestDist){bestDist=dist;bestIdx=i+1;}
+  }
+  pushUndo();
+  ann.points.splice(bestIdx,0,[wx,wy]);
+  renderAll();saveAllCanvases();
+  toast('已添加中间点');
+  const c=document.getElementById('ctx');if(c)c.style.display='none';
+}
 let undoStack=[], redoStack=[];
 let edgeDraw=null;
 let dragPayload=null; // {type:'device'|'template', data:...}
@@ -2284,6 +2304,10 @@ function renderAll(){
     }
   }
   // Attach all rendered content to SVG in one batch
+  // 提升标注线 handles 到最上层，避免被节点 anchor-zone 遮盖
+  wrapper.querySelectorAll('.edge-waypoint-handle[data-annotate-end]').forEach(h=>{
+    wrapper.appendChild(h);
+  });
   svg.appendChild(wrapper);
   // Auto-save on data change (deferred to avoid blocking render)
   if(_dirty){_dirty=false;setTimeout(()=>{saveAllCanvases();_canvasDirty.delete(currentCanvasIdx);renderCanvasDropdown();},0);}
@@ -3254,8 +3278,44 @@ function bindEvents(){
       const rect=svg.getBoundingClientRect();const mx=(e.clientX-rect.left-panX)/zoom,my=(e.clientY-rect.top-panY)/zoom;
       dragTarget=node;dragOff={x:node.x-mx,y:node.y-my};
       multiDragOffsets=null;
-    }else if(!e.target.closest('[data-edge-id]')){
-      sel=null;selSet=new Set();renderAll();showEmptyPanel();
+    }else{
+      const edgeHit=e.target.closest('[data-edge-id]');
+      if(edgeHit){
+        // 标注线整体拖拽（非端点、非句柄区域）
+        const hitEdge=edges.find(ee=>ee.id===edgeHit.dataset.edgeId);
+        if(hitEdge&&hitEdge.annotation&&hitEdge.points&&!e.target.closest('.edge-waypoint-handle')){
+          e.preventDefault();
+          sel=hitEdge.id;selSet=new Set([hitEdge.id]);
+          const rect=svg.getBoundingClientRect();
+          const startMX=(e.clientX-rect.left-panX)/zoom,startMY=(e.clientY-rect.top-panY)/zoom;
+          const origPts=hitEdge.points.map(p=>[...p]);
+          const GRID=10;
+          const onAM=ev=>{
+            const r2=svg.getBoundingClientRect();
+            const dx=(ev.clientX-r2.left-panX)/zoom-startMX;
+            const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
+            for(let i=0;i<hitEdge.points.length;i++){
+              hitEdge.points[i][0]=Math.round((origPts[i][0]+dx)/GRID)*GRID;
+              hitEdge.points[i][1]=Math.round((origPts[i][1]+dy)/GRID)*GRID;
+            }
+            const d=_buildAnnotationPath(hitEdge.points);
+            const eg=svg.querySelector(`[data-edge-id="${hitEdge.id}"]`);
+            if(eg){
+              eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
+              svg.querySelectorAll(`.edge-waypoint-handle[data-edge-id="${hitEdge.id}"]`).forEach((h,i)=>{
+                if(hitEdge.points[i]){h.setAttribute('cx',hitEdge.points[i][0]);h.setAttribute('cy',hitEdge.points[i][1]);}
+              });
+            }
+          };
+          const onAU=()=>{
+            document.removeEventListener('mousemove',onAM);document.removeEventListener('mouseup',onAU);
+            _dirty=true;saveAllCanvases();renderAll();
+          };
+          document.addEventListener('mousemove',onAM);document.addEventListener('mouseup',onAU);
+          return;
+        }
+      }
+      if(!edgeHit){sel=null;selSet=new Set();renderAll();showEmptyPanel();
       // drag模式：拖拽=平移，Shift+拖拽=框选；select模式反之
       const doPan=(interactionMode==='drag'&&!e.shiftKey)||(interactionMode==='select'&&e.shiftKey);
       if(doPan){
@@ -3265,6 +3325,7 @@ function bindEvents(){
         const rect=svg.getBoundingClientRect();
         const sx=(e.clientX-rect.left-panX)/zoom,sy=(e.clientY-rect.top-panY)/zoom;
         selBox={startX:sx,startY:sy,curX:sx,curY:sy};
+      }
       }
     }
   });
@@ -3356,30 +3417,6 @@ function bindEvents(){
       }
       return;
     }
-    // 双击标注曲线 → 添加中间点
-    const annHit=e.target.closest('[data-edge-id]');
-    if(annHit){
-      const ann=edges.find(ee=>ee.id===annHit.dataset.edgeId&&ee.annotation);
-      if(ann&&ann.points&&ann.points.length>=2){
-        const rect=svg.getBoundingClientRect();
-        const wx=(e.clientX-rect.left-panX)/zoom,wy=(e.clientY-rect.top-panY)/zoom;
-        // 找到最近的线段，在其中插入中间点
-        let bestIdx=1,bestDist=Infinity;
-        for(let i=0;i<ann.points.length-1;i++){
-          const ax=ann.points[i][0],ay=ann.points[i][1],bx=ann.points[i+1][0],by=ann.points[i+1][1];
-          const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
-          let t=len2>0?((wx-ax)*dx+(wy-ay)*dy)/len2:0;
-          t=Math.max(0,Math.min(1,t));
-          const px=ax+t*dx,py=ay+t*dy;
-          const dist=Math.hypot(wx-px,wy-py);
-          if(dist<bestDist){bestDist=dist;bestIdx=i+1;}
-        }
-        pushUndo();
-        ann.points.splice(bestIdx,0,[Math.round(wx),Math.round(wy)]);
-        sel=ann.id;renderAll();saveAllCanvases();
-        return;
-      }
-    }
     const ng=e.target.closest('.n-g,.note-g');if(!ng)return;
     const node=nodes.find(n=>n.id===ng.dataset.nodeId);if(!node)return;
     if(node.type==='note'){pushUndo();node.collapsed=!node.collapsed;renderAll();return;}
@@ -3400,6 +3437,18 @@ function bindEvents(){
     e.preventDefault();e.stopPropagation();
     const ng=e.target.closest('.n-g,.note-g');
     const ctx=document.getElementById('ctx');ctx.style.display='block';
+    // 标注线右键菜单
+    const annCtx=e.target.closest('[data-edge-id]');
+    if(annCtx&&!ng){
+      const annEdge=edges.find(ee=>ee.id===annCtx.dataset.edgeId&&ee.annotation);
+      if(annEdge){
+        const rect=svg.getBoundingClientRect();
+        const wx=(e.clientX-rect.left-panX)/zoom,wy=(e.clientY-rect.top-panY)/zoom;
+        sel=annEdge.id;selSet=new Set([annEdge.id]);renderAll();
+        ctx.innerHTML=`<div class="ci" onclick="addAnnotationMidpoint(${wx.toFixed(0)},${wy.toFixed(0)})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg> 添加中间点</div><div class="cs"></div><div class="ci d" onclick="deleteSelected()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> 删除标注</div>`;
+        return;
+      }
+    }
     // Clamp menu within viewport
     const vw=window.innerWidth,vh=window.innerHeight;
     const mw=180,mh=ng?100:340;
