@@ -839,6 +839,25 @@ function addAnnotationMidpoint(wx,wy){
   toast('已添加中间点');
   const c=document.getElementById('ctx');if(c)c.style.display='none';
 }
+function addAnnotationMidpointAtCenter(edgeId){
+  const ann=edges.find(e=>e.id===edgeId&&e.annotation);
+  if(!ann||!ann.points||ann.points.length<2)return;
+  // 在最长线段的中点插入控制点
+  let bestIdx=1,bestLen=0;
+  for(let i=0;i<ann.points.length-1;i++){
+    const dx=ann.points[i+1][0]-ann.points[i][0],dy=ann.points[i+1][1]-ann.points[i][1];
+    const len=dx*dx+dy*dy;
+    if(len>bestLen){bestLen=len;bestIdx=i+1;}
+  }
+  const ax=ann.points[bestIdx-1][0],ay=ann.points[bestIdx-1][1];
+  const bx=ann.points[bestIdx][0],by=ann.points[bestIdx][1];
+  const mx=Math.round((ax+bx)/2/10)*10,my=Math.round((ay+by)/2/10)*10;
+  pushUndo();
+  ann.points.splice(bestIdx,0,[mx,my]);
+  renderAll();saveAllCanvases();
+  showEdgePanel(ann);
+  toast('已添加中间点');
+}
 let undoStack=[], redoStack=[];
 let edgeDraw=null;
 let dragPayload=null; // {type:'device'|'template', data:...}
@@ -1848,10 +1867,10 @@ function renderAll(){
   applyTransform();
 
   // Edges
+  const _annotationGroups=[]; // 标注线延后渲染（置于最上层）
   edges.forEach(e=>{
-    // 标注曲线（不连接节点）
+    // 标注曲线（不连接节点）→ 延后渲染
     if(e.annotation&&e.points&&e.points.length>=2){
-      // 贝塞尔曲线：中间点作为控制点
       const d=_buildAnnotationPath(e.points);
       const eg=document.createElementNS(NS,'g');eg.dataset.edgeId=e.id;
       // 透明命中区域
@@ -1884,7 +1903,7 @@ function renderAll(){
       for(let i=1;i<e.points.length-1;i++){
         makeHandle(e.points[i][0],e.points[i][1],i);
       }
-      wrapper.appendChild(eg);
+      _annotationGroups.push(eg);
       return;
     }
     const s=nodeMap.get(e.source),t=nodeMap.get(e.target);
@@ -2304,10 +2323,8 @@ function renderAll(){
     }
   }
   // Attach all rendered content to SVG in one batch
-  // 提升标注线 handles 到最上层，避免被节点 anchor-zone 遮盖
-  wrapper.querySelectorAll('.edge-waypoint-handle[data-annotate-end]').forEach(h=>{
-    wrapper.appendChild(h);
-  });
+  // 标注线渲染到最上层（在 nodes/edges/groups 之上）
+  _annotationGroups.forEach(eg=>wrapper.appendChild(eg));
   svg.appendChild(wrapper);
   // Auto-save on data change (deferred to avoid blocking render)
   if(_dirty){_dirty=false;setTimeout(()=>{saveAllCanvases();_canvasDirty.delete(currentCanvasIdx);renderCanvasDropdown();},0);}
@@ -2616,10 +2633,17 @@ function _buildAnnotationPath(pts){
   // 只有2个点（无中间点）：直线
   if(pts.length===2)return'M'+pts[0][0]+','+pts[0][1]+'L'+pts[1][0]+','+pts[1][1];
   // 3个点及以上：用 Catmull-Rom 插值生成平滑贝塞尔曲线
+  // 端点切线沿整体方向（起点→终点），确保箭头不歪
   const tension=0.3;
+  const n=pts.length;
+  // 整体方向向量（用于端点虚拟点）
+  const odx=pts[n-1][0]-pts[0][0],ody=pts[n-1][1]-pts[0][1];
   let d='M'+pts[0][0]+','+pts[0][1];
-  for(let i=0;i<pts.length-1;i++){
-    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+  for(let i=0;i<n-1;i++){
+    const p1=pts[i],p2=pts[i+1];
+    // 端点使用整体方向延伸的虚拟点，避免切线受中间点拖拽影响
+    const p0=(i===0)?[pts[0][0]-odx,pts[0][1]-ody]:pts[i-1];
+    const p3=(i===n-2)?[pts[n-1][0]+odx,pts[n-1][1]+ody]:pts[Math.min(n-1,i+2)];
     const cp1x=p1[0]+(p2[0]-p0[0])*tension,cp1y=p1[1]+(p2[1]-p0[1])*tension;
     const cp2x=p2[0]-(p3[0]-p1[0])*tension,cp2y=p2[1]-(p3[1]-p1[1])*tension;
     d+='C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+p2[0]+','+p2[1];
@@ -3286,14 +3310,18 @@ function bindEvents(){
         if(hitEdge&&hitEdge.annotation&&hitEdge.points&&!e.target.closest('.edge-waypoint-handle')){
           e.preventDefault();
           sel=hitEdge.id;selSet=new Set([hitEdge.id]);
+          openPanel('right');showEdgePanel(hitEdge);
           const rect=svg.getBoundingClientRect();
           const startMX=(e.clientX-rect.left-panX)/zoom,startMY=(e.clientY-rect.top-panY)/zoom;
           const origPts=hitEdge.points.map(p=>[...p]);
           const GRID=10;
+          let _dragged=false;
           const onAM=ev=>{
             const r2=svg.getBoundingClientRect();
             const dx=(ev.clientX-r2.left-panX)/zoom-startMX;
             const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
+            if(!_dragged&&Math.hypot(dx,dy)<3)return;
+            _dragged=true;
             for(let i=0;i<hitEdge.points.length;i++){
               hitEdge.points[i][0]=Math.round((origPts[i][0]+dx)/GRID)*GRID;
               hitEdge.points[i][1]=Math.round((origPts[i][1]+dy)/GRID)*GRID;
@@ -3302,14 +3330,14 @@ function bindEvents(){
             const eg=svg.querySelector(`[data-edge-id="${hitEdge.id}"]`);
             if(eg){
               eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
-              svg.querySelectorAll(`.edge-waypoint-handle[data-edge-id="${hitEdge.id}"]`).forEach((h,i)=>{
+              eg.querySelectorAll('.edge-waypoint-handle').forEach((h,i)=>{
                 if(hitEdge.points[i]){h.setAttribute('cx',hitEdge.points[i][0]);h.setAttribute('cy',hitEdge.points[i][1]);}
               });
             }
           };
           const onAU=()=>{
             document.removeEventListener('mousemove',onAM);document.removeEventListener('mouseup',onAU);
-            _dirty=true;saveAllCanvases();renderAll();
+            if(_dragged){_dirty=true;saveAllCanvases();renderAll();showEdgePanel(hitEdge);}
           };
           document.addEventListener('mousemove',onAM);document.addEventListener('mouseup',onAU);
           return;
@@ -3915,10 +3943,15 @@ function renderFieldInput(nid,f){
 function showEdgePanel(edge){
   // 标注曲线：简洁面板
   if(edge.annotation){
+    const ptCount=(edge.points||[]).length;
     document.getElementById('rpTitle').innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> 标注';
     document.getElementById('rpBody').innerHTML=`
       <div class="rp-section">标注曲线</div>
       <div class="ff"><label>标签</label><input value="${esc(edge.label||'')}" placeholder="如 备注" onchange="updateEdge('${edge.id}','label',this.value)"></div>
+      <div class="rp-divider"></div>
+      <div class="rp-section">控制点（${ptCount}个）</div>
+      <div class="btn-row"><button class="btn" onclick="addAnnotationMidpointAtCenter('${edge.id}')" style="flex:1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg> 添加中间点</button></div>
+      ${(edge.points||[]).map((p,i)=>`<div class="ff" style="font-size:11px;color:var(--ink2)"><label>${i===0?'起点':i===ptCount-1?'终点':'中间点'+i}</label><span style="font-family:monospace">${p[0]}, ${p[1]}</span></div>`).join('')}
       <div class="rp-divider"></div>
       <button onclick="deleteEdge('${edge.id}')" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px">删除标注</button>
     `;
