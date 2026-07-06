@@ -520,6 +520,8 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
   <div class="sep"></div>
   <button id="btnMode" class="active" onclick="toggleInteractionMode()" title="拖移模式（点击切换为框选）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
   <button onclick="fitView()" title="适应视图"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+  <div class="sep"></div>
+  <button id="btnAnnotate" onclick="toggleAnnotateMode()" title="标注模式"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
 </div>
 
 <!-- ZOOM -->
@@ -731,7 +733,8 @@ const EDGE_VARIANTS={
   default:  {stroke:'#a8b5c8',width:1.5,dash:'',label:'默认'},
   emphasis:{stroke:'#6c5ce7',width:2.5,dash:'',label:'主干链路'},
   security:{stroke:'#d63031',width:1.5,dash:'6 3',label:'安全链路'},
-  async:   {stroke:'#636e72',width:1.5,dash:'4 4',label:'异步/备份'}
+  async:   {stroke:'#636e72',width:1.5,dash:'4 4',label:'异步/备份'},
+  annotation:{stroke:'#636e72',width:1.5,dash:'6 4',label:'标注'}
 };
 const _measureCanvas=document.createElement('canvas').getContext('2d');
 function truncateText(text,font,maxW){
@@ -808,6 +811,13 @@ function toggleInteractionMode(){
   }else{
     btn.classList.remove('active');btn.innerHTML=SEL_ICON;btn.title='框选模式（点击切换为拖移）';
   }
+}
+let annotateMode=false;
+function toggleAnnotateMode(){
+  annotateMode=!annotateMode;
+  const btn=document.getElementById('btnAnnotate');
+  btn.classList.toggle('active',annotateMode);
+  svg.style.cursor=annotateMode?'crosshair':'';
 }
 let undoStack=[], redoStack=[];
 let edgeDraw=null;
@@ -1805,7 +1815,7 @@ function renderAll(){
   svg.innerHTML='';
   // Grid pattern
   const defs=document.createElementNS(NS,'defs');
-  defs.innerHTML='<pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1" fill="#c5c8d0"/></pattern>';
+  defs.innerHTML='<pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1" fill="#c5c8d0"/></pattern><marker id="arrow-annotation" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#636e72"/></marker>';
   svg.appendChild(defs);
   // Background
   const bg=document.createElementNS(NS,'rect');
@@ -1819,6 +1829,38 @@ function renderAll(){
 
   // Edges
   edges.forEach(e=>{
+    // 标注曲线（不连接节点）
+    if(e.annotation&&e.points&&e.points.length>=2){
+      const d='M'+e.points.map(p=>p[0]+','+p[1]).join('L');
+      const eg=document.createElementNS(NS,'g');eg.dataset.edgeId=e.id;
+      // 透明命中区域
+      const hit=document.createElementNS(NS,'path');hit.setAttribute('d',d);hit.setAttribute('stroke','transparent');hit.setAttribute('stroke-width','14');hit.setAttribute('fill','none');hit.setAttribute('class','e-hit');hit.style.pointerEvents='stroke';hit.dataset.edgeId=e.id;eg.appendChild(hit);
+      const path=document.createElementNS(NS,'path');path.setAttribute('d',d);path.setAttribute('class','e-line');path.dataset.edgeId=e.id;
+      const v=EDGE_VARIANTS.annotation;
+      path.style.stroke=v.stroke;path.style.strokeWidth=v.width;path.style.strokeDasharray=v.dash;
+      path.setAttribute('marker-end','url(#arrow-annotation)');
+      if(sel===e.id){hit.style.stroke='rgba(108,92,231,0.15)';}
+      eg.appendChild(path);
+      // 标签
+      if(e.label){
+        const lx=(e.points[0][0]+e.points[e.points.length-1][0])/2+(e.labelOffX||0);
+        const ly=(e.points[0][1]+e.points[e.points.length-1][1])/2-8+(e.labelOffY||0);
+        const lbg=document.createElementNS(NS,'rect');lbg.setAttribute('x',lx-30);lbg.setAttribute('y',ly-12);lbg.setAttribute('width','60');lbg.setAttribute('height','16');lbg.setAttribute('fill','transparent');lbg.setAttribute('class','e-label-bg');lbg.dataset.edgeId=e.id;lbg.style.cursor='move';eg.appendChild(lbg);
+        const lt=document.createElementNS(NS,'text');lt.setAttribute('x',lx);lt.setAttribute('y',ly);lt.setAttribute('text-anchor','middle');lt.setAttribute('fill',v.stroke);lt.setAttribute('font-size','11');lt.setAttribute('font-family',cv.font);lt.setAttribute('class','e-label');lt.textContent=e.label;lt.dataset.edgeId=e.id;lt.style.cursor='move';eg.appendChild(lt);
+      }
+      // 标注端点句柄（可拖拽移动）
+      const makeHandle=(px,py,idx)=>{
+        const c=document.createElementNS(NS,'circle');c.setAttribute('cx',px);c.setAttribute('cy',py);c.setAttribute('r','5');
+        c.setAttribute('fill','#fff');c.setAttribute('stroke',v.stroke);c.setAttribute('stroke-width','1.5');
+        c.setAttribute('class','edge-waypoint-handle');c.style.cursor='grab';c.style.opacity=sel===e.id?'1':'0';
+        c.dataset.edgeId=e.id;c.dataset.waypointIdx=idx;c.dataset.annotateEnd='true';
+        eg.appendChild(c);
+      };
+      makeHandle(e.points[0][0],e.points[0][1],0);
+      makeHandle(e.points[e.points.length-1][0],e.points[e.points.length-1][1],e.points.length-1);
+      wrapper.appendChild(eg);
+      return;
+    }
     const s=nodeMap.get(e.source),t=nodeMap.get(e.target);
     if(!s||!t)return;
     const ep=getEdgeEndpoints(e);if(!ep)return;
@@ -1968,7 +2010,7 @@ function renderAll(){
     // Card - white with subtle shadow effect via stroke
     const isHi=viewMode==='hi';
     const filledFields=n.fields.filter(f=>f.value);
-    const extraH=Math.min(filledFields.length,2)*14; // up to 2 extra lines
+    const extraH=Math.min(filledFields.length,3)*14; // up to 3 extra lines
     const w=160, h=isHi?40:58+extraH;
     // clipPath to prevent text overflow
     const clipId='clip-'+n.id;
@@ -2033,9 +2075,9 @@ function renderAll(){
     label.textContent=truncateText(n.label,'600 12px sans-serif',labelMaxW);
     cg.appendChild(label);
 
-    // Optional: show up to 2 field values as subtitles (full mode only)
+    // Optional: show up to 3 field values as subtitles (full mode only)
     if(!isHi){
-      const filled=n.fields.filter(f=>f.value).slice(0,2);
+      const filled=n.fields.filter(f=>f.value).slice(0,3);
       filled.forEach((field,i)=>{
         const sub=document.createElementNS(NS,'text');
         sub.setAttribute('x',-w/2+10);sub.setAttribute('y',-h/2+40+i*14);
@@ -2244,7 +2286,7 @@ function renderAll(){
 function getAnchorWorldPos(id,anchor){
   const node=nodes.find(n=>n.id===id);if(!node)return null;
   const hw=80;
-  const filledCount=viewMode==='hi'?0:Math.min(node.fields.filter(f=>f.value).length,2);
+  const filledCount=viewMode==='hi'?0:Math.min(node.fields.filter(f=>f.value).length,3);
   const hh=viewMode==='hi'?20:(29+filledCount*7);
   return{top:{x:node.x,y:node.y-hh},bottom:{x:node.x,y:node.y+hh},left:{x:node.x-hw,y:node.y},right:{x:node.x+hw,y:node.y}}[anchor];
 }
@@ -2265,6 +2307,11 @@ function getBestAnchor(sourceNode,targetNode){
 // Anchor direction vectors for curve control points
 const ANCHOR_DIR={left:{dx:-1,dy:0},right:{dx:1,dy:0},top:{dx:0,dy:-1},bottom:{dx:0,dy:1}};
 function getEdgeEndpoints(edge){
+  // 标注曲线直接返回 points 坐标
+  if(edge.annotation&&edge.points){
+    const p=edge.points;
+    return{sx:p[0][0],sy:p[0][1],stx:p[p.length-1][0],sty:p[p.length-1][1],sp:'',tp:''};
+  }
   const s=nodes.find(n=>n.id===edge.source),t=nodes.find(n=>n.id===edge.target);
   if(!s||!t)return null;
   let sp=edge.sourcePort,tp=edge.targetPort;
@@ -2628,6 +2675,19 @@ function startEdgeDraw(anchorEl){
   document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);
 }
 function renderTempEdge(){
+  // 标注模式：虚线 + 箭头
+  if(edgeDraw&&edgeDraw._annotate){
+    let te=document.getElementById('temp-edge');
+    const main=document.getElementById('main');
+    if(!te&&main){te=document.createElementNS(NS,'line');te.setAttribute('id','temp-edge');te.setAttribute('pointer-events','none');main.appendChild(te);}
+    if(te){
+      te.setAttribute('x1',edgeDraw.fromX);te.setAttribute('y1',edgeDraw.fromY);
+      te.setAttribute('x2',edgeDraw.toX);te.setAttribute('y2',edgeDraw.toY);
+      te.style.stroke='#636e72';te.style.strokeDasharray='6 4';te.style.strokeWidth='1.5';
+      te.style.markerEnd='url(#arrow-annotation)';
+    }
+    return;
+  }
   let te=document.getElementById('temp-edge');
   const main=document.getElementById('main');
   if(!te&&main){te=document.createElementNS(NS,'line');te.setAttribute('id','temp-edge');te.setAttribute('stroke',cssVar('--accent'));te.setAttribute('stroke-width','2');te.setAttribute('stroke-dasharray','6 3');te.setAttribute('pointer-events','none');main.appendChild(te);}
@@ -2916,11 +2976,35 @@ function bindEvents(){
     const wph=e.target.closest('.edge-waypoint-handle');
     if(wph&&wph.dataset.edgeId){
       e.preventDefault();e.stopPropagation();
-      const edge=edges.find(ed=>ed.id===wph.dataset.edgeId);if(!edge||!edge._waypoints)return;
+      const edge=edges.find(ed=>ed.id===wph.dataset.edgeId);if(!edge)return;
       const wi=parseInt(wph.dataset.waypointIdx);
-      if(isNaN(wi)||!edge._waypoints[wi])return;
+      if(isNaN(wi))return;
       const rect=svg.getBoundingClientRect();
       const startMX=(e.clientX-rect.left-panX)/zoom,startMY=(e.clientY-rect.top-panY)/zoom;
+      // 标注曲线端点拖拽
+      if(edge.annotation&&edge.points&&edge.points[wi]){
+        const startWX=edge.points[wi][0],startWY=edge.points[wi][1];
+        const onWM=ev=>{
+          const r2=svg.getBoundingClientRect();
+          const dx=(ev.clientX-r2.left-panX)/zoom-startMX;
+          const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
+          const GRID=10;
+          edge.points[wi]=[Math.round((startWX+dx)/GRID)*GRID, Math.round((startWY+dy)/GRID)*GRID];
+          // 直接重建路径
+          const d='M'+edge.points.map(p=>p[0]+','+p[1]).join('L');
+          const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
+          if(eg){
+            eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
+            wph.setAttribute('cx',edge.points[wi][0]);
+            wph.setAttribute('cy',edge.points[wi][1]);
+          }
+        };
+        const onWU=()=>{document.removeEventListener('mousemove',onWM);document.removeEventListener('mouseup',onWU);_dirty=true;saveAllCanvases();};
+        document.addEventListener('mousemove',onWM);document.addEventListener('mouseup',onWU);
+        return;
+      }
+      if(!edge._waypoints||!edge._waypoints[wi])return;
+      // startMX/startMY/rect 已在上面声明
       const startWX=edge._waypoints[wi][0],startWY=edge._waypoints[wi][1];
       const onWM=ev=>{
         const r2=svg.getBoundingClientRect();
@@ -3077,6 +3161,39 @@ function bindEvents(){
       };
       const onU=()=>{document.removeEventListener('mousemove',onM);document.removeEventListener('mouseup',onU);_dirty=true;renderAll();};
       document.addEventListener('mousemove',onM);document.addEventListener('mouseup',onU);return;
+    }
+    // 标注模式：开始绘制标注曲线
+    if(annotateMode){
+      e.preventDefault();
+      const rect=svg.getBoundingClientRect();
+      const sx=(e.clientX-rect.left-panX)/zoom,sy=(e.clientY-rect.top-panY)/zoom;
+      edgeDraw={from:null,fromAnchor:'',fromX:sx,fromY:sy,toX:sx,toY:sy,_annotate:true};
+      const onAM=ev=>{
+        if(!edgeDraw)return;
+        const r2=svg.getBoundingClientRect();
+        edgeDraw.toX=(ev.clientX-r2.left-panX)/zoom;
+        edgeDraw.toY=(ev.clientY-r2.top-panY)/zoom;
+        renderTempEdge();
+      };
+      const onAU=()=>{
+        document.removeEventListener('mousemove',onAM);
+        document.removeEventListener('mouseup',onAU);
+        if(edgeDraw&&Math.hypot(edgeDraw.toX-edgeDraw.fromX,edgeDraw.toY-edgeDraw.fromY)>10){
+          pushUndo();
+          const ann={
+            id:uid(),source:null,target:null,sourcePort:'',targetPort:'',
+            label:'',labelOffX:0,labelOffY:0,variant:'annotation',routing:'',
+            points:[[edgeDraw.fromX,edgeDraw.fromY],[edgeDraw.toX,edgeDraw.toY]],
+            annotation:true
+          };
+          edges.push(ann);
+          sel=ann.id;selSet=new Set();
+          openPanel('right');showEdgePanel(ann);
+        }
+        edgeDraw=null;renderAll();saveAllCanvases();
+      };
+      document.addEventListener('mousemove',onAM);document.addEventListener('mouseup',onAU);
+      return;
     }
     const ng=e.target.closest('.n-g,.note-g');
     if(ng){
@@ -3314,7 +3431,7 @@ function getNodeCardHeight(n){
   if(n.type==='note')return noteH(n);
   const isHi=viewMode==='hi';
   if(isHi)return 40;
-  const filled=Math.min(n.fields.filter(f=>f.value).length,2);
+  const filled=Math.min(n.fields.filter(f=>f.value).length,3);
   return 58+filled*14; // base 58px + 14px per field row (matches renderAll card)
 }
 function distributeMulti(dir){if(selSet.size<3)return;pushUndo();const ns=[...selSet].map(id=>nodes.find(n=>n.id===id)).filter(Boolean);const GRID=20;
@@ -3680,6 +3797,17 @@ function renderFieldInput(nid,f){
 }
 
 function showEdgePanel(edge){
+  // 标注曲线：简洁面板
+  if(edge.annotation){
+    document.getElementById('rpTitle').innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> 标注';
+    document.getElementById('rpBody').innerHTML=`
+      <div class="rp-section">标注曲线</div>
+      <div class="ff"><label>标签</label><input value="${esc(edge.label||'')}" placeholder="如 备注" onchange="updateEdge('${edge.id}','label',this.value)"></div>
+      <div class="rp-divider"></div>
+      <button onclick="deleteEdge('${edge.id}')" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px">删除标注</button>
+    `;
+    return;
+  }
   const sn=nodes.find(n=>n.id===edge.source),tn=nodes.find(n=>n.id===edge.target);
   const curV=edge.variant||'default';
   const variantBtns=Object.entries(EDGE_VARIANTS).map(([k,v])=>`<button onclick="updateEdge('${edge.id}','variant','${k}')" title="${v.label}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${curV===k?'#6c5ce7':'transparent'};background:${v.stroke};cursor:pointer;flex-shrink:0"></button>`).join('');
@@ -3863,9 +3991,14 @@ function addBadgeToSelected(){
   toast('请先选中一个设备节点');
 }
 function fitView(){
-  if(!nodes.length)return;
-  const minX=Math.min(...nodes.map(n=>n.x))-80,minY=Math.min(...nodes.map(n=>n.y))-80;
-  const maxX=Math.max(...nodes.map(n=>n.x))+80,maxY=Math.max(...nodes.map(n=>n.y))+80;
+  if(!nodes.length&&!edges.length)return;
+  const xs=[],ys=[];
+  nodes.forEach(n=>{xs.push(n.x);ys.push(n.y);});
+  // 标注曲线的点纳入边界
+  edges.filter(e=>e.annotation&&e.points).forEach(e=>{e.points.forEach(p=>{xs.push(p[0]);ys.push(p[1]);});});
+  if(!xs.length)return;
+  const minX=Math.min(...xs)-80,minY=Math.min(...ys)-80;
+  const maxX=Math.max(...xs)+80,maxY=Math.max(...ys)+80;
   const rect=svg.getBoundingClientRect();
   const sx=rect.width/(maxX-minX),sy=rect.height/(maxY-minY);
   zoom=Math.min(sx,sy,2);
@@ -3899,7 +4032,11 @@ function copySelected(){
   const clipNodes=ids.map(id=>nodes.find(n=>n.id===id)).filter(Boolean).map(n=>deepClone(n));
   // Also copy edges between selected nodes
   const idSet=new Set(ids);
-  const clipEdges=edges.filter(e=>idSet.has(e.source)&&idSet.has(e.target)).map(e=>deepClone(e));
+  const clipEdges=edges.filter(e=>{
+    // 标注曲线：如果被选中则复制
+    if(e.annotation)return idSet.has(e.id);
+    return idSet.has(e.source)&&idSet.has(e.target);
+  }).map(e=>deepClone(e));
   _clipboard={nodes:clipNodes,edges:clipEdges};
   _pasteOffset=0;
   toast(`已复制 ${clipNodes.length} 个对象`);
@@ -3916,15 +4053,20 @@ function paste(){
     return{...deepClone(n),id:newId,x:n.x+offset,y:n.y+offset,label:n.label+' (副本)'};
   });
   const newEdges=_clipboard.edges.map(e=>{
+    // 标注曲线：偏移所有点，不需要节点映射
+    if(e.annotation){
+      return{...deepClone(e),id:uid(),points:e.points.map(p=>[p[0]+offset,p[1]+offset])};
+    }
     const newSrc=idMap[e.source],newTgt=idMap[e.target];
     if(!newSrc||!newTgt)return null;
     return{...deepClone(e),id:uid(),source:newSrc,target:newTgt};
   }).filter(Boolean);
   nodes.push(...newNodes);
   edges.push(...newEdges);
-  // Select pasted nodes
+  // Select pasted items (nodes + annotation edges)
+  const allNewIds=[...newNodes.map(n=>n.id),...newEdges.filter(e=>e.annotation).map(e=>e.id)];
   selSet=new Set(newNodes.map(n=>n.id));
-  sel=newNodes.length?newNodes[0].id:null;
+  sel=allNewIds.length?allNewIds[0]:null;
   renderAll();
   updateCount();
   toast(`已粘贴 ${newNodes.length} 个对象`);
@@ -4166,6 +4308,10 @@ function importFromFile(e){
       return{...deepClone(n),id:newId,x:n.x+offsetX,y:n.y+offsetY};
     });
     const newEdges=(src.edges||[]).map(e=>{
+      // 标注曲线：偏移点坐标
+      if(e.annotation){
+        return{...deepClone(e),id:uid(),points:(e.points||[]).map(p=>[p[0]+offsetX,p[1]+offsetY])};
+      }
       const newSrc=idMap[e.source],newTgt=idMap[e.target];
       if(!newSrc||!newTgt)return null;
       return{...deepClone(e),id:uid(),source:newSrc,target:newTgt};
@@ -4222,6 +4368,7 @@ function captureScreenshot(){
   // Remove hit zones, anchors, selection UI
   clone.querySelectorAll('.e-hit').forEach(p=>p.remove());
   clone.querySelectorAll('.anchor,.anchor-zone').forEach(c=>c.remove());
+  clone.querySelectorAll('.edge-endpoint-handle,.edge-waypoint-handle,.edge-segment-handle').forEach(h=>h.remove());
   clone.querySelectorAll('.sel-box,.temp-line').forEach(e=>e.remove());
   clone.querySelector('#temp-edge')?.remove();
   clone.querySelector('#sel-box')?.remove();
@@ -4306,7 +4453,7 @@ function captureScreenshot(){
   clone.querySelectorAll('[clip-path]').forEach(el=>el.removeAttribute('clip-path'));
   clone.querySelectorAll('[overflow]').forEach(el=>el.removeAttribute('overflow'));
   // Compute content bounds with generous padding (node card is 160x58)
-  if(!nodes.length){toast('画布为空');return;}
+  if(!nodes.length&&!edges.length){toast('画布为空');return;}
   const hw=80, hh=30; // half card width/height
   const pad=50;
   const xs=[],ys=[];
@@ -4315,6 +4462,8 @@ function captureScreenshot(){
     else{xs.push(n.x);ys.push(n.y);}
   });
   groups.forEach(g=>{xs.push(g.x-40);ys.push(g.y-30);xs.push(g.x+g.w+40);ys.push(g.y+g.h+30);});
+  // 标注曲线的点也纳入边界
+  edges.filter(e=>e.annotation&&e.points).forEach(e=>{e.points.forEach(p=>{xs.push(p[0]);ys.push(p[1]);});});
   const minX=Math.min(...xs)-hw-pad,minY=Math.min(...ys)-hh-pad;
   const maxX=Math.max(...xs)+hw+pad,maxY=Math.max(...ys)+hh+pad;
   const bw=maxX-minX,bh=maxY-minY;
@@ -4344,6 +4493,7 @@ function exportSVG(){
   // Remove hit zones, anchors, selection UI
   clone.querySelectorAll('.e-hit').forEach(p=>p.remove());
   clone.querySelectorAll('.anchor,.anchor-zone').forEach(c=>c.remove());
+  clone.querySelectorAll('.edge-endpoint-handle,.edge-waypoint-handle,.edge-segment-handle').forEach(h=>h.remove());
   clone.querySelectorAll('.sel-box,.temp-line').forEach(e=>e.remove());
   clone.querySelector('#temp-edge')?.remove();
   clone.querySelector('#sel-box')?.remove();
@@ -4427,7 +4577,7 @@ function exportSVG(){
   clone.querySelectorAll('[clip-path]').forEach(el=>el.removeAttribute('clip-path'));
   clone.querySelectorAll('[overflow]').forEach(el=>el.removeAttribute('overflow'));
   // Compute content bounds
-  if(!nodes.length){toast('画布为空');return;}
+  if(!nodes.length&&!edges.length){toast('画布为空');return;}
   const hw=80,hh=30,pad=50;
   const xs=[],ys=[];
   nodes.forEach(n=>{
@@ -4435,6 +4585,8 @@ function exportSVG(){
     else{xs.push(n.x);ys.push(n.y);}
   });
   groups.forEach(g=>{xs.push(g.x-40);ys.push(g.y-30);xs.push(g.x+g.w+40);ys.push(g.y+g.h+30);});
+  // 标注曲线的点也纳入边界
+  edges.filter(e=>e.annotation&&e.points).forEach(e=>{e.points.forEach(p=>{xs.push(p[0]);ys.push(p[1]);});});
   const minX=Math.min(...xs)-hw-pad,minY=Math.min(...ys)-hh-pad;
   const maxX=Math.max(...xs)+hw+pad,maxY=Math.max(...ys)+hh+pad;
   const bw=maxX-minX,bh=maxY-minY;
