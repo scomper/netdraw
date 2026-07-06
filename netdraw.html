@@ -1831,7 +1831,8 @@ function renderAll(){
   edges.forEach(e=>{
     // 标注曲线（不连接节点）
     if(e.annotation&&e.points&&e.points.length>=2){
-      const d='M'+e.points.map(p=>p[0]+','+p[1]).join('L');
+      // 贝塞尔曲线：中间点作为控制点
+      const d=_buildAnnotationPath(e.points);
       const eg=document.createElementNS(NS,'g');eg.dataset.edgeId=e.id;
       // 透明命中区域
       const hit=document.createElementNS(NS,'path');hit.setAttribute('d',d);hit.setAttribute('stroke','transparent');hit.setAttribute('stroke-width','14');hit.setAttribute('fill','none');hit.setAttribute('class','e-hit');hit.style.pointerEvents='stroke';hit.dataset.edgeId=e.id;eg.appendChild(hit);
@@ -1848,7 +1849,7 @@ function renderAll(){
         const lbg=document.createElementNS(NS,'rect');lbg.setAttribute('x',lx-30);lbg.setAttribute('y',ly-12);lbg.setAttribute('width','60');lbg.setAttribute('height','16');lbg.setAttribute('fill','transparent');lbg.setAttribute('class','e-label-bg');lbg.dataset.edgeId=e.id;lbg.style.cursor='move';eg.appendChild(lbg);
         const lt=document.createElementNS(NS,'text');lt.setAttribute('x',lx);lt.setAttribute('y',ly);lt.setAttribute('text-anchor','middle');lt.setAttribute('fill',v.stroke);lt.setAttribute('font-size','11');lt.setAttribute('font-family',cv.font);lt.setAttribute('class','e-label');lt.textContent=e.label;lt.dataset.edgeId=e.id;lt.style.cursor='move';eg.appendChild(lt);
       }
-      // 标注端点句柄（可拖拽移动）
+      // 标注端点句柄（两端 + 中间点）
       const makeHandle=(px,py,idx)=>{
         const c=document.createElementNS(NS,'circle');c.setAttribute('cx',px);c.setAttribute('cy',py);c.setAttribute('r','5');
         c.setAttribute('fill','#fff');c.setAttribute('stroke',v.stroke);c.setAttribute('stroke-width','1.5');
@@ -1856,8 +1857,13 @@ function renderAll(){
         c.dataset.edgeId=e.id;c.dataset.waypointIdx=idx;c.dataset.annotateEnd='true';
         eg.appendChild(c);
       };
+      // 两端点
       makeHandle(e.points[0][0],e.points[0][1],0);
       makeHandle(e.points[e.points.length-1][0],e.points[e.points.length-1][1],e.points.length-1);
+      // 中间控制点
+      for(let i=1;i<e.points.length-1;i++){
+        makeHandle(e.points[i][0],e.points[i][1],i);
+      }
       wrapper.appendChild(eg);
       return;
     }
@@ -2580,6 +2586,23 @@ function buildOrthogonalPath(waypoints){
 }
 // ===== END ORTHOGONAL ROUTING ENGINE =====
 
+// 构建标注曲线路径（Catmull-Rom → Cubic Bezier，中间点作为控制点）
+function _buildAnnotationPath(pts){
+  if(!pts||pts.length<2)return'';
+  // 只有2个点（无中间点）：直线
+  if(pts.length===2)return'M'+pts[0][0]+','+pts[0][1]+'L'+pts[1][0]+','+pts[1][1];
+  // 3个点及以上：用 Catmull-Rom 插值生成平滑贝塞尔曲线
+  const tension=0.3;
+  let d='M'+pts[0][0]+','+pts[0][1];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    const cp1x=p1[0]+(p2[0]-p0[0])*tension,cp1y=p1[1]+(p2[1]-p0[1])*tension;
+    const cp2x=p2[0]-(p3[0]-p1[0])*tension,cp2y=p2[1]-(p3[1]-p1[1])*tension;
+    d+='C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+p2[0]+','+p2[1];
+  }
+  return d;
+}
+
 function buildEdgePath(sx,sy,tx,ty,sp,tp,routing,sourceNode,targetNode,edge){
   // Orthogonal routing mode
   if(routing==='orthogonal'&&sourceNode&&targetNode){
@@ -2990,8 +3013,7 @@ function bindEvents(){
           const dy=(ev.clientY-r2.top-panY)/zoom-startMY;
           const GRID=10;
           edge.points[wi]=[Math.round((startWX+dx)/GRID)*GRID, Math.round((startWY+dy)/GRID)*GRID];
-          // 直接重建路径
-          const d='M'+edge.points.map(p=>p[0]+','+p[1]).join('L');
+          const d=_buildAnnotationPath(edge.points);
           const eg=svg.querySelector(`[data-edge-id="${edge.id}"]`);
           if(eg){
             eg.querySelectorAll('path').forEach(p=>p.setAttribute('d',d));
@@ -3162,9 +3184,25 @@ function bindEvents(){
       const onU=()=>{document.removeEventListener('mousemove',onM);document.removeEventListener('mouseup',onU);_dirty=true;renderAll();};
       document.addEventListener('mousemove',onM);document.addEventListener('mouseup',onU);return;
     }
-    // 标注模式：开始绘制标注曲线
+    // 标注模式：点击线条进入编辑模式，否则开始绘制
     if(annotateMode){
       e.preventDefault();
+      // 点击已有标注线条 → 选中并退出绘制模式
+      const hitAnnot=e.target.closest('.e-hit[data-edge-id]');
+      if(hitAnnot){
+        const annId=hitAnnot.dataset.edgeId;
+        const ann=edges.find(ee=>ee.id===annId&&ee.annotation);
+        if(ann){
+          annotateMode=false;
+          document.getElementById('btnAnnotate').classList.remove('active');
+          svg.style.cursor='';
+          sel=annId;selSet=new Set([annId]);
+          openPanel('right');showEdgePanel(ann);renderAll();
+          return;
+        }
+      }
+      // 点击句柄 → 不进入绘制
+      if(e.target.closest('.edge-waypoint-handle'))return;
       const rect=svg.getBoundingClientRect();
       const sx=(e.clientX-rect.left-panX)/zoom,sy=(e.clientY-rect.top-panY)/zoom;
       edgeDraw={from:null,fromAnchor:'',fromX:sx,fromY:sy,toX:sx,toY:sy,_annotate:true};
@@ -3288,6 +3326,11 @@ function bindEvents(){
   svg.addEventListener('click',e=>{
     const eg=e.target.closest('[data-edge-id]');
     if(eg){sel=eg.dataset.edgeId;renderAll();selectEdge(eg.dataset.edgeId);}
+    // 点击空白区域退出编辑（取消选中标注）
+    else if(e.target===svg||e.target.closest('#main')||e.target.tagName==='rect'&&e.target.id===''){
+      const curEdge=edges.find(ee=>ee.id===sel&&ee.annotation);
+      if(curEdge){sel=null;selSet=new Set();renderAll();}
+    }
   });
 
   svg.addEventListener('dblclick',e=>{
@@ -3312,6 +3355,30 @@ function bindEvents(){
         input.addEventListener('keydown',e=>{if(e.key==='Enter')doBadgeEdit();if(e.key==='Escape')toast('已取消');});
       }
       return;
+    }
+    // 双击标注曲线 → 添加中间点
+    const annHit=e.target.closest('[data-edge-id]');
+    if(annHit){
+      const ann=edges.find(ee=>ee.id===annHit.dataset.edgeId&&ee.annotation);
+      if(ann&&ann.points&&ann.points.length>=2){
+        const rect=svg.getBoundingClientRect();
+        const wx=(e.clientX-rect.left-panX)/zoom,wy=(e.clientY-rect.top-panY)/zoom;
+        // 找到最近的线段，在其中插入中间点
+        let bestIdx=1,bestDist=Infinity;
+        for(let i=0;i<ann.points.length-1;i++){
+          const ax=ann.points[i][0],ay=ann.points[i][1],bx=ann.points[i+1][0],by=ann.points[i+1][1];
+          const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+          let t=len2>0?((wx-ax)*dx+(wy-ay)*dy)/len2:0;
+          t=Math.max(0,Math.min(1,t));
+          const px=ax+t*dx,py=ay+t*dy;
+          const dist=Math.hypot(wx-px,wy-py);
+          if(dist<bestDist){bestDist=dist;bestIdx=i+1;}
+        }
+        pushUndo();
+        ann.points.splice(bestIdx,0,[Math.round(wx),Math.round(wy)]);
+        sel=ann.id;renderAll();saveAllCanvases();
+        return;
+      }
     }
     const ng=e.target.closest('.n-g,.note-g');if(!ng)return;
     const node=nodes.find(n=>n.id===ng.dataset.nodeId);if(!node)return;
