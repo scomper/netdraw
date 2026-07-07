@@ -858,6 +858,15 @@ function addAnnotationMidpointAtCenter(edgeId){
   showEdgePanel(ann);
   toast('已添加中间点');
 }
+function removeAnnotationMidpoint(edgeId,idx){
+  const ann=edges.find(e=>e.id===edgeId&&e.annotation);
+  if(!ann||!ann.points||idx<=0||idx>=ann.points.length-1)return;
+  pushUndo();
+  ann.points.splice(idx,1);
+  renderAll();saveAllCanvases();
+  showEdgePanel(ann);
+  toast('已移除中间点');
+}
 let undoStack=[], redoStack=[];
 let edgeDraw=null;
 let dragPayload=null; // {type:'device'|'template', data:...}
@@ -2630,20 +2639,20 @@ function buildOrthogonalPath(waypoints){
 // 构建标注曲线路径（Catmull-Rom → Cubic Bezier，中间点作为控制点）
 function _buildAnnotationPath(pts){
   if(!pts||pts.length<2)return'';
-  // 只有2个点（无中间点）：直线
   if(pts.length===2)return'M'+pts[0][0]+','+pts[0][1]+'L'+pts[1][0]+','+pts[1][1];
-  // 3个点及以上：用 Catmull-Rom 插值生成平滑贝塞尔曲线
-  // 端点切线沿整体方向（起点→终点），确保箭头不歪
-  const tension=0.3;
+  // 3个点：二次贝塞尔曲线（标准抛物线，中间点为控制点）
+  if(pts.length===3){
+    return'M'+pts[0][0]+','+pts[0][1]+'Q'+pts[1][0]+','+pts[1][1]+' '+pts[2][0]+','+pts[2][1];
+  }
+  // 4个点及以上：Catmull-Rom 平滑曲线，端点切线跟随相邻点方向（自然弯曲）
+  const tension=0.2;
   const n=pts.length;
-  // 整体方向向量（用于端点虚拟点）
-  const odx=pts[n-1][0]-pts[0][0],ody=pts[n-1][1]-pts[0][1];
   let d='M'+pts[0][0]+','+pts[0][1];
   for(let i=0;i<n-1;i++){
     const p1=pts[i],p2=pts[i+1];
-    // 端点使用整体方向延伸的虚拟点，避免切线受中间点拖拽影响
-    const p0=(i===0)?[pts[0][0]-odx,pts[0][1]-ody]:pts[i-1];
-    const p3=(i===n-2)?[pts[n-1][0]+odx,pts[n-1][1]+ody]:pts[Math.min(n-1,i+2)];
+    // 端点虚拟点：沿相邻方向自然延伸（产生 C 曲线而非 S 曲线）
+    const p0=(i===0)?[2*pts[0][0]-pts[1][0],2*pts[0][1]-pts[1][1]]:pts[i-1];
+    const p3=(i===n-2)?[2*pts[n-1][0]-pts[n-2][0],2*pts[n-1][1]-pts[n-2][1]]:pts[Math.min(n-1,i+2)];
     const cp1x=p1[0]+(p2[0]-p0[0])*tension,cp1y=p1[1]+(p2[1]-p0[1])*tension;
     const cp2x=p2[0]-(p3[0]-p1[0])*tension,cp2y=p2[1]-(p3[1]-p1[1])*tension;
     d+='C'+cp1x.toFixed(1)+','+cp1y.toFixed(1)+' '+cp2x.toFixed(1)+','+cp2y.toFixed(1)+' '+p2[0]+','+p2[1];
@@ -3951,7 +3960,7 @@ function showEdgePanel(edge){
       <div class="rp-divider"></div>
       <div class="rp-section">控制点（${ptCount}个）</div>
       <div class="btn-row"><button class="btn" onclick="addAnnotationMidpointAtCenter('${edge.id}')" style="flex:1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg> 添加中间点</button></div>
-      ${(edge.points||[]).map((p,i)=>`<div class="ff" style="font-size:11px;color:var(--ink2)"><label>${i===0?'起点':i===ptCount-1?'终点':'中间点'+i}</label><span style="font-family:monospace">${p[0]}, ${p[1]}</span></div>`).join('')}
+      ${(edge.points||[]).map((p,i)=>{const isEnd=(i===0||i===ptCount-1);return `<div class="ff" style="font-size:11px;align-items:center"><label style="flex:1">${isEnd?(i===0?'起点':'终点'):('中间点'+i)}</label><span style="font-family:monospace;color:var(--ink2)">${p[0]}, ${p[1]}</span>${isEnd?'':`<button onclick="removeAnnotationMidpoint('${edge.id}',${i})" title="移除" style="border:none;background:transparent;color:var(--danger);cursor:pointer;padding:2px 6px;font-size:14px;line-height:1">×</button>`}</div>`;}).join('')}
       <div class="rp-divider"></div>
       <button onclick="deleteEdge('${edge.id}')" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px">删除标注</button>
     `;
