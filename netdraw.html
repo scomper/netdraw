@@ -495,6 +495,7 @@ html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFo
     <input type="file" id="fileOpen" accept=".json" style="display:none" onchange="onFileSelected(event)">
     <button onclick="captureScreenshot()" title="导出图片"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
     <button onclick="exportSVG()" title="导出SVG"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+    <button onclick="shareCanvas()" title="分享链接" style="color:var(--accent)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></button>
     <div class="sep"></div>
     <button onclick="openAIDialog()" title="AI 拓扑图识别" style="color:var(--accent)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l-1.5 4.5L6 9l4.5 1.5L12 15l1.5-4.5L18 9l-4.5-1.5L12 3z"/><path d="M19 15l-1 3-3 1 3 1 1 3 1-3 3-1-3-1-1-3z"/></svg></button>
     <button onclick="togglePanel('right')" title="属性面板"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -603,6 +604,32 @@ try{
   </div>
   <div class="rp-body" id="rpBody">
     <div class="empty-hint">选择节点或连线<br>查看和编辑属性</div>
+  </div>
+</div>
+
+<!-- Share Dialog -->
+<div class="ai-overlay" id="shareOverlay" onclick="if(event.target===this)closeShareDialog()" style="display:none">
+  <div class="ai-dialog" style="width:480px">
+    <div class="ai-dialog-head">
+      <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>分享链接</h3>
+      <button class="type-dialog-close" onclick="closeShareDialog()">✕</button>
+    </div>
+    <div class="ai-dialog-body" id="shareDialogBody">
+      <div id="shareLoading" style="text-align:center;padding:40px 0;color:var(--muted)">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;display:inline-block"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <div style="margin-top:8px;font-size:13px">正在生成分享链接...</div>
+      </div>
+      <div id="shareResult" style="display:none">
+        <div style="font-size:13px;color:var(--ink2);margin-bottom:12px">分享链接已生成，复制以下内容发送给对方：</div>
+        <textarea id="shareText" readonly style="width:100%;height:120px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:none;background:var(--bg)" onclick="this.select()"></textarea>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button onclick="copyShareText()" style="flex:1;padding:8px;border:1px solid var(--accent);border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:13px">复制全部</button>
+          <button onclick="copyShareLink()" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer;font-size:13px">仅复制链接</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:12px;text-align:center">⚠️ 分享将缓存拓扑数据到服务器，24 小时后自动失效清理</div>
+      </div>
+      <div id="shareError" style="display:none;text-align:center;padding:30px 0;color:var(--danger);font-size:13px"></div>
+    </div>
   </div>
 </div>
 
@@ -722,6 +749,13 @@ try{
 
 <div class="ctx" id="ctx"></div>
 <div class="toast" id="toast"></div>
+
+<!-- Read-only banner for shared views -->
+<div id="shareBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;text-align:center;padding:6px 16px;font-size:12px;display:none;align-items:center;justify-content:center;gap:8px">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+  <span id="shareBannerText">这是分享的拓扑图（只读模式）</span>
+  <a href="https://draw.pepcn.com" style="color:#fff;text-decoration:underline;margin-left:8px">用 NetDraw 创建自己的拓扑图</a>
+</div>
 <div id="lpTooltip" style="position:fixed;background:var(--ink);color:#fff;padding:3px 8px;border-radius:5px;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;z-index:200"></div>
 
 <script>
@@ -5253,6 +5287,120 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 // Save current canvas state before page unload (preserves pan/zoom)
 window.addEventListener('beforeunload',()=>{saveCurrentCanvas();saveAllCanvases();});
+
+// ============ Share Feature ============
+let _readOnlyMode=false;
+let _currentShareId=null;
+
+function shareCanvas(){
+  saveCurrentCanvas();
+  const title=document.getElementById('docTitle').textContent.trim()||'网络拓扑图';
+  const proj={version:2,title,canvases,currentCanvasIdx,customPresets,customDefs:{}};
+  customPresets.forEach(p=>{proj.customDefs[p.id]={label:p.name,color:p.color,svg:p.iconKey?TYPE_SVG[p.iconKey]||USER_ICONS[p.iconKey]||'':'',fields:p.fields||[]};});
+  const data=JSON.stringify(proj);
+  
+  document.getElementById('shareOverlay').style.display='flex';
+  document.getElementById('shareLoading').style.display='block';
+  document.getElementById('shareResult').style.display='none';
+  document.getElementById('shareError').style.display='none';
+  
+  fetch('/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:data})
+    .then(r=>r.json())
+    .then(r=>{
+      if(r.error)throw new Error(r.error);
+      const link=r.url;
+      const text=`${title} - 网络拓扑图\n\n点击链接查看（24小时内有效）：\n${link}\n\n（由 NetDraw 生成 draw.pepcn.com）`;
+      document.getElementById('shareText').value=text;
+      document.getElementById('shareLoading').style.display='none';
+      document.getElementById('shareResult').style.display='block';
+    })
+    .catch(e=>{
+      document.getElementById('shareLoading').style.display='none';
+      document.getElementById('shareError').style.display='block';
+      document.getElementById('shareError').textContent='分享失败：'+e.message;
+    });
+}
+
+function closeShareDialog(){
+  document.getElementById('shareOverlay').style.display='none';
+}
+
+function copyShareText(){
+  const ta=document.getElementById('shareText');
+  ta.select();
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(ta.value).then(()=>toast('已复制到剪贴板'));
+  }else{
+    document.execCommand('copy');
+    toast('已复制到剪贴板');
+  }
+}
+
+function copyShareLink(){
+  const text=document.getElementById('shareText').value;
+  const m=text.match(/https?:\/\/[^\s]+/);
+  if(m&&navigator.clipboard){
+    navigator.clipboard.writeText(m[0]).then(()=>toast('链接已复制'));
+  }
+}
+
+function loadSharedCanvas(shareId){
+  _readOnlyMode=true;
+  _currentShareId=shareId;
+  fetch('/api/share/'+shareId)
+    .then(r=>{
+      if(!r.ok)throw new Error('not found');
+      return r.json();
+    })
+    .then(proj=>{
+      // Restore custom types
+      if(proj.customPresets){
+        proj.customPresets.forEach(p=>{
+          if(!customPresets.find(cp=>cp.id===p.id)){
+            customPresets.push(p);
+            if(p.iconKey){TYPE_SVG[p.iconKey]=sanitizeSvg(p.svg||USER_ICONS[p.iconKey]||'');}
+            TYPE_LABELS[p.id]=p.name;COLORS[p.id]=p.color;PRESET_FIELDS[p.id]=p.fields||[];
+          }
+        });
+        buildDevicePanel();
+      }
+      const src=proj.canvases[proj.currentCanvasIdx||0];
+      if(!src){toast('无法加载分享内容');return;}
+      (src.edges||[]).forEach(e=>{if(!e.variant)e.variant='default';});
+      nodes=deepClone(src.nodes||[]);
+      edges=deepClone(src.edges||[]);
+      templates=deepClone(src.templates||[]);
+      groups=deepClone(src.groups||[]);
+      document.getElementById('docTitle').textContent=proj.title||'分享的拓扑图';
+      panX=0;panY=0;zoom=1;sel=null;selSet=new Set();
+      // Enter read-only mode
+      document.getElementById('shareBanner').style.display='flex';
+      document.querySelector('.toolbar').style.display='none';
+      document.getElementById('leftPanel').style.display='none';
+      document.getElementById('rightPanel').style.display='none';
+      document.querySelectorAll('.tools-right button').forEach(b=>b.style.display='none');
+      renderAll();applyTransform();
+      requestAnimationFrame(()=>{try{fitView();}catch(_){}});
+      // Override save to prevent writes in read-only mode
+      window._originalSave=saveAllCanvases;
+      saveAllCanvases=function(){}; // no-op in read-only
+    })
+    .catch(e=>{
+      document.getElementById('shareBanner').style.display='flex';
+      document.getElementById('shareBannerText').textContent='分享链接已失效或不存在';
+      document.querySelector('.toolbar').style.display='none';
+      document.getElementById('leftPanel').style.display='none';
+    });
+}
+
+// Check for share URL on page load
+(function(){
+  const m=location.search.match(/[?&]share=([a-f0-9]+)/i);
+  if(m){
+    // Defer until app is fully initialized
+    setTimeout(()=>loadSharedCanvas(m[1]),100);
+  }
+})();
 </script>
 </body>
 </html>
