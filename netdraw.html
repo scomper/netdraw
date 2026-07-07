@@ -5305,7 +5305,11 @@ function shareCanvas(){
   document.getElementById('shareError').style.display='none';
   
   fetch('/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:data})
-    .then(r=>r.json())
+    .then(r=>{
+      if(r.status===429)return r.json().then(d=>{throw new Error(d.message||'分享次数已达上限')});
+      if(!r.ok)throw new Error('服务器错误 ('+r.status+')');
+      return r.json();
+    })
     .then(r=>{
       if(r.error)throw new Error(r.error);
       const link=r.url;
