@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S python3 -E
 """NetDraw Share Server - minimal JSON relay with rate limiting and timeouts"""
 import json, os, time, hashlib, collections, threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
